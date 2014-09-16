@@ -13,6 +13,7 @@ text "\nBasic options:"
 option "server" s "Memcached server hostname[:port].  \
 Repeat to specify multiple servers." string multiple
 option "binary" - "Use binary memcached protocol instead of ASCII."
+option "etcd" - "Test etcd instead of memcached."
 option "qps" q "Target aggregate QPS. 0 = peak QPS." int default="0"
 option "time" t "Maximum time to run (seconds)." int default="5"
 
@@ -61,6 +62,8 @@ option "search" - "Search for the QPS where N-order statistic < Xus.  \
 faster than 1000us)." string typestr="N:X"
 option "scan" - "Scan latency across QPS rates from min to max."
        string typestr="min:max:step"
+
+option "linear" - "Use linearizable reads for Etcd."
 
 text "\nAgent-mode options:"
 option "agentmode" A "Run client in agent mode."

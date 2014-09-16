@@ -68,4 +68,27 @@ public:
   virtual bool handle_response(evbuffer* input, bool &done);
 };
 
+class ProtocolEtcd : public Protocol {
+public:
+  ProtocolEtcd(options_t opts, Connection* conn, bufferevent* bev):
+    Protocol(opts, conn, bev) {};
+  ~ProtocolEtcd() {};
+
+  virtual bool setup_connection_w() { return true; }
+  virtual bool setup_connection_r(evbuffer* input) { return true; }
+  virtual int  get_request(const char* key);
+  virtual int  set_request(const char* key, const char* value, int len);
+  virtual bool handle_response(evbuffer* input, bool &done);
+
+private:
+  enum read_fsm {
+    IDLE,
+    WAITING_FOR_HTTP,
+    WAITING_FOR_HTTP_BODY,
+  };
+
+  read_fsm read_state;
+  int data_length;
+};
+
 #endif

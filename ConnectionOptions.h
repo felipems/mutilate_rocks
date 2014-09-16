@@ -10,6 +10,7 @@ typedef struct {
   int qps;
   int records;
 
+  bool etcd;
   bool binary;
   bool sasl;
   char username[32];
@@ -34,6 +35,7 @@ typedef struct {
   enum distribution_t iadist;
   int warmup;
   bool skip;
+  bool linear;
 
   bool roundrobin;
   int server_given;

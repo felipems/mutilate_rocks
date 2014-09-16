@@ -1054,8 +1054,10 @@ void args_to_options(options_t* options) {
   //  else
   options->records = args.records_arg / options->server_given;
 
+  options->etcd = args.etcd_given;
   options->binary = args.binary_given;
   options->sasl = args.username_given;
+  options->linear = args.linear_given;
   
   if (args.password_given)
     strcpy(options->password, args.password_arg);

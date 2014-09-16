@@ -106,19 +106,9 @@ private:
   void drive_write_machine(double now = 0.0);
 
   // request functions
-  void issue_sasl();
   void issue_get(const char* key, double now = 0.0);
   void issue_set(const char* key, const char* value, int length,
                  double now = 0.0);
-
-  // protocol fucntions
-  int set_request_ascii(const char* key, const char* value, int length);
-  int set_request_binary(const char* key, const char* value, int length);
-  int get_request_ascii(const char* key);
-  int get_request_binary(const char* key);
-
-  bool consume_binary_response(evbuffer *input);
-  bool consume_ascii_line(evbuffer *input, bool &done);
 };
 
 #endif
