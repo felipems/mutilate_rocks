@@ -619,7 +619,8 @@ int main(int argc, char **argv) {
         DIE("--save: failed to open %s: %s", args.save_arg, strerror(errno));
 
       for (auto i: stats.get_sampler.samples) {
-        fprintf(file, "%f %f\n", i.start_time - boot_time, i.time());
+        fprintf(file, "%f %f %f\n", i.start_time, i.start_time - boot_time,
+          i.time());
       }
     }
   }
