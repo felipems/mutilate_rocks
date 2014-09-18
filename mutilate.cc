@@ -1060,6 +1060,9 @@ void args_to_options(options_t* options) {
   options->binary = args.binary_given;
   options->sasl = args.username_given;
   options->linear = args.linear_given;
+
+  options->reserve = 0;
+  if (args.reserve_given) options->reserve = args.reserve_arg;
   
   if (args.password_given)
     strcpy(options->password, args.password_arg);

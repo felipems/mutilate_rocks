@@ -8,15 +8,12 @@ using namespace std;
 
 class Operation {
 public:
-  double start_time, end_time;
-
   enum type_enum {
-    GET, SET, SASL
+    GET, SET
   };
 
   type_enum type;
-
-  string key;
+  double start_time, end_time;
 
   double time() const { return (end_time - start_time) * 1000000; }
 
@@ -28,11 +25,9 @@ public:
     switch(type) {
     case GET:  return "GET";
     case SET:  return "SET";
-    case SASL: return "SASL";
     default:   return "?";
     }
   }
 };
-
 
 #endif // OPERATION_H

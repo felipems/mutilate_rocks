@@ -36,6 +36,7 @@ typedef struct {
   int warmup;
   bool skip;
   bool linear;
+  int reserve;
 
   bool roundrobin;
   int server_given;

@@ -37,6 +37,12 @@ Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
     iagen->set_lambda(options.lambda);
   }
 
+  if (sampling && options.reserve > 0) {
+    stats.get_sampler.samples.reserve(
+      options.reserve * (1 - options.update) + 1);
+    stats.set_sampler.samples.reserve(options.reserve * options.update + 1);
+  }
+
   read_state  = INIT_READ;
   write_state = INIT_WRITE;
 
@@ -157,7 +163,6 @@ void Connection::issue_get(const char* key, double now) {
   }
 #endif
 
-  op.key = string(key);
   op.type = Operation::GET;
   op_queue.push(op);
 

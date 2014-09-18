@@ -64,6 +64,7 @@ option "scan" - "Scan latency across QPS rates from min to max."
        string typestr="min:max:step"
 
 option "linear" - "Use linearizable reads for Etcd."
+option "reserve" - "Reserve this many slots in the sampling vector." int
 
 text "\nAgent-mode options:"
 option "agentmode" A "Run client in agent mode."
