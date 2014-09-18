@@ -618,9 +618,10 @@ int main(int argc, char **argv) {
       if ((file = fopen(args.save_arg, "w")) == NULL)
         DIE("--save: failed to open %s: %s", args.save_arg, strerror(errno));
 
+      stats.get_sampler.accumulate(stats.set_sampler);
       for (auto i: stats.get_sampler.samples) {
-        fprintf(file, "%f %f %f\n", i.start_time, i.start_time - boot_time,
-          i.time());
+        fprintf(file, "%f %f %s %f\n", i.start_time, i.start_time - boot_time,
+          i.toString(), i.time());
       }
     }
   }

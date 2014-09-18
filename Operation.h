@@ -17,9 +17,21 @@ public:
   type_enum type;
 
   string key;
-  // string value;
 
   double time() const { return (end_time - start_time) * 1000000; }
+
+  bool operator < (const Operation& op) const {
+    return (start_time < op.start_time);
+  }
+
+  const char* toString() {
+    switch(type) {
+    case GET:  return "GET";
+    case SET:  return "SET";
+    case SASL: return "SASL";
+    default:   return "?";
+    }
+  }
 };
 
 

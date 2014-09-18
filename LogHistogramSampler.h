@@ -16,7 +16,6 @@
 class LogHistogramSampler {
 public:
   std::vector<uint64_t> bins;
-
   std::vector<Operation> samples;
 
   double sum;
@@ -25,7 +24,6 @@ public:
   LogHistogramSampler() = delete;
   LogHistogramSampler(int _bins) : sum(0.0), sum_sq(0.0) {
     assert(_bins > 0);
-
     bins.resize(_bins + 1, 0);
   }
 
@@ -41,8 +39,6 @@ public:
     sum += s;
     sum_sq += s*s;
 
-    //    I("%f", sum);
-
     if ((int64_t) bin < 0) {
       bin = 0;
     } else if (bin >= bins.size()) {
@@ -53,12 +49,10 @@ public:
   }
 
   double average() {
-    //    I("%f %d", sum, total());
     return sum / total();
   }
 
   double stddev() {
-    //    I("%f %d", sum, total());
     return sqrt(sum_sq / total() - pow(sum / total(), 2.0));
   }
 
@@ -88,9 +82,7 @@ public:
 
   uint64_t total() {
     uint64_t sum = 0.0;
-
     for (auto i: bins) sum += i;
-
     return sum;
   }
 
@@ -103,6 +95,7 @@ public:
     sum_sq += h.sum_sq;
 
     for (auto i: h.samples) samples.push_back(i);
+    std::sort(samples.begin(), samples.end());
   }
 };
 
