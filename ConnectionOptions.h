@@ -29,6 +29,7 @@ typedef struct {
   int    threads;
   enum   distribution_t iadist;
   int    warmup;
+  int    lpause;
   bool   skip;
   bool   linear;
   int    reserve;

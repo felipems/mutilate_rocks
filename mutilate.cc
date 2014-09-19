@@ -623,6 +623,7 @@ int main(int argc, char **argv) {
       fprintf(arch, "IA distribution: %s\n\n", options.ia);
 
       fprintf(arch, "Warmup: %d\n", options.warmup);
+      fprintf(arch, "Load pause: %d\n", options.lpause);
       fprintf(arch, "Lambda: %f\n", options.lambda);
       fprintf(arch, "Blocking: %d\n", options.blocking);
       fprintf(arch, "No delay: %d\n", !options.no_nodelay);
@@ -1014,9 +1015,13 @@ void do_mutilate(const vector<string>& servers, options_t& options,
     if (master) V("Warmup stop.");
   }
 
-
   // FIXME: Synchronize start_time here across threads/nodes.
   pthread_barrier_wait(&barrier);
+
+  if (args.lpause_given) {
+    V("Sleeping %.1fs for -W.", args.lpause_arg);
+    sleep_time(args.lpause_arg);
+  }
 
   if (master && args.wait_given) {
     if (get_time() < boot_time + args.wait_arg) {
@@ -1155,6 +1160,7 @@ void args_to_options(options_t* options) {
   options->iadist = get_distribution(args.iadist_arg);
   strcpy(options->ia, args.iadist_arg);
   options->warmup = args.warmup_given ? args.warmup_arg : 0;
+  options->lpause = args.lpause_given ? args.lpause_arg : 0;
   options->skip = args.skip_given;
   options->moderate = args.moderate_given;
 }

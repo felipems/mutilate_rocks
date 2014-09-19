@@ -55,6 +55,7 @@ option "no_nodelay" - "Don't use TCP_NODELAY."
 
 option "warmup" w "Warmup time before starting measurement." int
 option "wait" W "Time to wait after startup to start measurement." int
+option "lpause" - "Time to wait after loading done before starting measurements." int
 option "save" - "Record latency samples to given file." string
 option "archive" - "Save all data to a given file." string
 
