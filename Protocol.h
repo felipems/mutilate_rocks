@@ -80,7 +80,7 @@ public:
   virtual int  set_request(const char* key, const char* value, int len);
   virtual bool handle_response(evbuffer* input, bool &done);
 
-private:
+protected:
   enum read_fsm {
     IDLE,
     WAITING_FOR_HTTP,
@@ -89,6 +89,15 @@ private:
 
   read_fsm read_state;
   int data_length;
+};
+
+class ProtocolEtcd2 : public ProtocolEtcd {
+public:
+  ProtocolEtcd2(options_t opts, Connection* conn, bufferevent* bev):
+    ProtocolEtcd(opts, conn, bev) {};
+  ~ProtocolEtcd2() {};
+
+  virtual bool handle_response(evbuffer* input, bool &done);
 };
 
 #endif

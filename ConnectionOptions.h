@@ -11,6 +11,7 @@ typedef struct {
   int    records;
 
   bool etcd;
+  bool etcd2;
   bool binary;
   bool sasl;
   char username[32];

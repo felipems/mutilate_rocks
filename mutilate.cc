@@ -581,8 +581,14 @@ int main(int argc, char **argv) {
       }
       fprintf(arch, "\n");
 
-      if (options.etcd) {
-        fprintf(arch, "Protocol: etcd");
+      if (options.etcd2) {
+        fprintf(arch, "Protocol: etcd (master)");
+        if (options.linear) {
+          fprintf(arch, " [linear]");
+        }
+        fprintf(arch, "\n");
+      } else if (options.etcd) {
+        fprintf(arch, "Protocol: etcd (v0.4.6)");
         if (options.linear) {
           fprintf(arch, " [linear]");
         }
@@ -1101,6 +1107,7 @@ void args_to_options(options_t* options) {
   options->records = args.records_arg / options->server_given;
 
   options->etcd = args.etcd_given;
+  options->etcd2 = args.etcd2_given;
   options->binary = args.binary_given;
   options->sasl = args.username_given;
   options->linear = args.linear_given;

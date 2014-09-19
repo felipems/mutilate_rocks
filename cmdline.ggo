@@ -13,7 +13,8 @@ text "\nBasic options:"
 option "server" s "Memcached server hostname[:port].  \
 Repeat to specify multiple servers." string multiple
 option "binary" - "Use binary memcached protocol instead of ASCII."
-option "etcd" - "Test etcd instead of memcached."
+option "etcd" - "Test etcd (0.4.6) instead of memcached."
+option "etcd2" - "Test etcd (master) instead of memcached."
 option "qps" q "Target aggregate QPS. 0 = peak QPS." int default="0"
 option "time" t "Maximum time to run (seconds)." int default="5"
 

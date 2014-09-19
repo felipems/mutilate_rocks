@@ -273,3 +273,48 @@ bool ProtocolEtcd::handle_response(evbuffer* input, bool &done) {
   DIE("Shouldn't ever reach here...");
 }
 
+bool ProtocolEtcd2::handle_response(evbuffer* input, bool &done) {
+  char *buf = NULL;
+  struct evbuffer_ptr ptr;
+  size_t n_read_out;
+
+  switch (read_state) {
+
+  case WAITING_FOR_HTTP:
+    buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+    if (buf == NULL) return false;
+
+    conn->stats.rx_bytes += n_read_out + 2;
+
+    if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
+      conn->stats.get_misses++;
+    } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
+      // nothing...
+    } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
+      // nothing...
+    } else {
+      DIE("Unknown HTTP response: %s\n", buf);
+    }
+    free(buf);
+    read_state = WAITING_FOR_HTTP_BODY;
+    done = false;
+    return true;
+
+  case WAITING_FOR_HTTP_BODY:
+    ptr = evbuffer_search(input, "}}\n", 3, NULL);
+    if (ptr.pos < 0) {
+      evbuffer_drain(input, evbuffer_get_length(input) - 2);
+      return false;
+    }
+    conn->stats.rx_bytes += ptr.pos + 3;
+    evbuffer_drain(input, ptr.pos + 3);
+    read_state = WAITING_FOR_HTTP;
+    done = true;
+    return true;
+
+  default: printf("state: %d\n", read_state); DIE("Unimplemented!");
+  }
+
+  DIE("Shouldn't ever reach here...");
+}
+
