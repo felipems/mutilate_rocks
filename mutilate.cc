@@ -573,7 +573,7 @@ int main(int argc, char **argv) {
 
       go(servers, options, stats);
 
-      stats.print_stats("read", stats.get_sampler, false);
+      stats.print_stats(stdout, "read", stats.get_sampler, false);
       printf(" %8.1f", stats.get_qps());
       printf(" %8d\n", q);
     }    
@@ -582,47 +582,112 @@ int main(int argc, char **argv) {
   }
 
   if (!args.scan_given && !args.loadonly_given) {
-    stats.print_header();
-    stats.print_stats("read",   stats.get_sampler);
-    stats.print_stats("update", stats.set_sampler);
-    stats.print_stats("op_q",   stats.op_sampler);
+    FILE *arch = stdout;
+    if (args.archive_given) {
+      printf("Saving results to %s.\n", args.archive_arg);
+      if ((arch = fopen(args.archive_arg, "w")) == NULL) {
+        DIE("--archive: failed to open %s: %s", args.archive_arg, strerror(errno));
+      }
+
+      for (auto s: servers) {
+        fprintf(arch, "Server: %s\n", s.c_str());
+      }
+      fprintf(arch, "\n");
+
+      if (options.etcd) {
+        fprintf(arch, "Protocol: etcd");
+        if (options.linear) {
+          fprintf(arch, " [linear]");
+        }
+        fprintf(arch, "\n");
+      } else if (options.binary) {
+        fprintf(arch, "Protocol: binary\n");
+      } else {
+        fprintf(arch, "Protocol: ascii\n");
+      }
+      fprintf(arch, "Load only: %d\n", options.loadonly);
+      fprintf(arch, "No load: %d\n\n", options.noload);
+
+      fprintf(arch, "Time: %d\n\n", options.time);
+      fprintf(arch, "Records: %d\n", options.records);
+      fprintf(arch, "Update: %f\n", options.update);
+      
+      fprintf(arch, "QPS: %d\n", options.qps);
+      fprintf(arch, "Connections: %d\n", options.connections);
+      fprintf(arch, "Threads: %d\n", options.threads);
+      fprintf(arch, "Depth: %d\n\n", options.depth);
+      fprintf(arch, "Skip: %d\n\n", options.skip);
+
+      fprintf(arch, "Key distribution: %s\n", options.keysize);
+      fprintf(arch, "Value distribution: %s\n", options.valuesize);
+      fprintf(arch, "IA distribution: %s\n\n", options.ia);
+
+      fprintf(arch, "Warmup: %d\n", options.warmup);
+      fprintf(arch, "Lambda: %f\n", options.lambda);
+      fprintf(arch, "Blocking: %d\n", options.blocking);
+      fprintf(arch, "No delay: %d\n", !options.no_nodelay);
+      fprintf(arch, "Round robbin: %d\n", options.roundrobin);
+      fprintf(arch, "Moderate: %d\n", options.moderate);
+      fprintf(arch, "Reserve: %d\n", options.reserve);
+
+      fprintf(arch, "\n======================================\n\n");
+    }
+
+    stats.print_header(arch);
+    stats.print_stats(arch, "read",   stats.get_sampler);
+    stats.print_stats(arch, "update", stats.set_sampler);
+    stats.print_stats(arch, "op_q",   stats.op_sampler);
 
     int total = stats.gets + stats.sets;
 
-    printf("\nTotal QPS = %.1f (%d / %.1fs)\n",
-           total / (stats.stop - stats.start),
-           total, stats.stop - stats.start);
+    fprintf(arch, "\nTotal QPS = %.1f (%d / %.1fs)\n",
+            total / (stats.stop - stats.start),
+            total, stats.stop - stats.start);
 
     if (args.search_given && peak_qps > 0.0)
-      printf("Peak QPS  = %.1f\n", peak_qps);
+      fprintf(arch, "Peak QPS  = %.1f\n", peak_qps);
 
-    printf("\n");
+    fprintf(arch, "\n");
 
-    printf("Misses = %" PRIu64 " (%.1f%%)\n", stats.get_misses,
-           (double) stats.get_misses/stats.gets*100);
+    fprintf(arch, "Misses = %" PRIu64 " (%.1f%%)\n", stats.get_misses,
+            (double) stats.get_misses/stats.gets*100);
 
-    printf("Skipped TXs = %" PRIu64 " (%.1f%%)\n\n", stats.skips,
-           (double) stats.skips / total * 100);
+    fprintf(arch, "Skipped TXs = %" PRIu64 " (%.1f%%)\n\n", stats.skips,
+            (double) stats.skips / total * 100);
 
-    printf("RX %10" PRIu64 " bytes : %6.1f MB/s\n",
-           stats.rx_bytes,
-           (double) stats.rx_bytes / 1024 / 1024 / (stats.stop - stats.start));
-    printf("TX %10" PRIu64 " bytes : %6.1f MB/s\n",
-           stats.tx_bytes,
-           (double) stats.tx_bytes / 1024 / 1024 / (stats.stop - stats.start));
+    fprintf(arch, "RX %10" PRIu64 " bytes : %6.1f MB/s\n",
+            stats.rx_bytes,
+            (double) stats.rx_bytes / 1024 / 1024 / (stats.stop - stats.start));
+    fprintf(arch, "TX %10" PRIu64 " bytes : %6.1f MB/s\n",
+            stats.tx_bytes,
+            (double) stats.tx_bytes / 1024 / 1024 / (stats.stop - stats.start));
+
+    if (args.archive_given || args.save_given) {
+      stats.get_sampler.accumulate(stats.set_sampler);
+    }
+
+    if (args.archive_given) {
+      fprintf(arch, "\n======================================\n\n");
+      for (auto i: stats.get_sampler.samples) {
+        fprintf(arch, "%f %f %s %f\n", i.start_time, i.start_time - boot_time,
+          i.toString(), i.time());
+      }
+    }
+    fclose(arch);
 
     if (args.save_given) {
       printf("Saving latency samples to %s.\n", args.save_arg);
 
       FILE *file;
-      if ((file = fopen(args.save_arg, "w")) == NULL)
+      if ((file = fopen(args.save_arg, "w")) == NULL) {
         DIE("--save: failed to open %s: %s", args.save_arg, strerror(errno));
+      }
 
-      stats.get_sampler.accumulate(stats.set_sampler);
       for (auto i: stats.get_sampler.samples) {
         fprintf(file, "%f %f %s %f\n", i.start_time, i.start_time - boot_time,
-          i.toString(), i.time());
+                i.toString(), i.time());
       }
+      fclose(file);
     }
   }
 
@@ -1090,7 +1155,6 @@ void args_to_options(options_t* options) {
   options->iadist = get_distribution(args.iadist_arg);
   strcpy(options->ia, args.iadist_arg);
   options->warmup = args.warmup_given ? args.warmup_arg : 0;
-  options->oob_thread = false;
   options->skip = args.skip_given;
   options->moderate = args.moderate_given;
 }

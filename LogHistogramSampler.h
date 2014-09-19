@@ -29,7 +29,7 @@ public:
 
   void sample(const Operation &op) {
     sample(op.time());
-    if (args.save_given) samples.push_back(op);
+    if (args.save_given || args.archive_given) samples.push_back(op);
   }
 
   void sample(double s) {
@@ -58,6 +58,12 @@ public:
 
   double minimum() {
     for (size_t i = 0; i < bins.size(); i++)
+      if (bins[i] > 0) return pow(_POW, (double) i + 0.5);
+    DIE("Not implemented");
+  }
+
+  double maximum() {
+    for (size_t i = bins.size() - 1; i >= 0; i--)
       if (bins[i] > 0) return pow(_POW, (double) i + 0.5);
     DIE("Not implemented");
   }

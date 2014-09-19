@@ -55,6 +55,20 @@ public:
     return sum / count;
   }
 
+  double stddev() {
+    // TODO: Implement
+    return 0.0
+  }
+
+  double minimum() {
+    return get_nth(0);
+  }
+
+  double maximum() {
+    // TODO: Implement
+    return 0.0
+  }
+
   double get_nth(double nth) {
     uint64_t count = total();
     uint64_t n = 0;

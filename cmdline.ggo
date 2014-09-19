@@ -56,6 +56,7 @@ option "no_nodelay" - "Don't use TCP_NODELAY."
 option "warmup" w "Warmup time before starting measurement." int
 option "wait" W "Time to wait after startup to start measurement." int
 option "save" - "Record latency samples to given file." string
+option "archive" - "Save all data to a given file." string
 
 option "search" - "Search for the QPS where N-order statistic < Xus.  \
 (i.e. --search 95:1000 means find the QPS where 95% of requests are \
