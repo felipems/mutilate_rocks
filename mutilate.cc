@@ -421,18 +421,12 @@ int main(int argc, char **argv) {
   if (args.quiet_given) log_level = QUIET;
 
   if (args.depth_arg < 1) DIE("--depth must be >= 1");
-  //  if (args.valuesize_arg < 1 || args.valuesize_arg > 1024*1024)
-  //    DIE("--valuesize must be >= 1 and <= 1024*1024");
   if (args.qps_arg < 0) DIE("--qps must be >= 0");
   if (args.update_arg < 0.0 || args.update_arg > 1.0)
     DIE("--update must be >= 0.0 and <= 1.0");
   if (args.time_arg < 1) DIE("--time must be >= 1");
-  //  if (args.keysize_arg < MINIMUM_KEY_LENGTH)
-  //    DIE("--keysize must be >= %d", MINIMUM_KEY_LENGTH);
   if (args.connections_arg < 1 || args.connections_arg > MAXIMUM_CONNECTIONS)
     DIE("--connections must be between [1,%d]", MAXIMUM_CONNECTIONS);
-  //  if (get_distribution(args.iadist_arg) == -1)
-  //    DIE("--iadist invalid: %s", args.iadist_arg);
   if (!args.server_given && !args.agentmode_given)
     DIE("--server or --agentmode must be specified.");
 
@@ -441,13 +435,6 @@ int main(int argc, char **argv) {
   init_random_stuff();
   boot_time = get_time();
   setvbuf(stdout, NULL, _IONBF, 0);
-
-  //  struct event_base *base;
-
-  //  if ((base = event_base_new()) == NULL) DIE("event_base_new() fail");
-  //  evthread_use_pthreads();
-
-  //  if ((evdns = evdns_base_new(base, 1)) == 0) DIE("evdns");
 
 #ifdef HAVE_LIBZMQ
   if (args.agentmode_given) {
@@ -662,6 +649,8 @@ int main(int argc, char **argv) {
     fprintf(arch, "TX %10" PRIu64 " bytes : %6.1f MB/s\n",
             stats.tx_bytes,
             (double) stats.tx_bytes / 1024 / 1024 / (stats.stop - stats.start));
+    fprintf(arch, "Start Time: %f\n", stats.start);
+    fprintf(arch, "Stop  Time: %f\n", stats.stop);
 
     if (args.archive_given || args.save_given) {
       stats.get_sampler.accumulate(stats.set_sampler);
@@ -931,10 +920,6 @@ void do_mutilate(const vector<string>& servers, options_t& options,
     return;
   }
 
-  // FIXME: Remove.  Not needed, testing only.
-  //  // FIXME: Synchronize start_time here across threads/nodes.
-  //  pthread_barrier_wait(&barrier);
-
   // Warmup connection.
   if (options.warmup > 0) {
     if (master) V("Warmup start.");
@@ -955,7 +940,6 @@ void do_mutilate(const vector<string>& servers, options_t& options,
 #endif
 
     int old_time = options.time;
-    //    options.time = 1;
 
     start = get_time();
     for (Connection *conn: connections) {
@@ -967,13 +951,9 @@ void do_mutilate(const vector<string>& servers, options_t& options,
     while (1) {
       event_base_loop(base, loop_flag);
 
-      //#ifdef USE_CLOCK_GETTIME
-      //      now = get_time();
-      //#else
       struct timeval now_tv;
       event_base_gettimeofday_cached(base, &now_tv);
       now = tv_to_double(&now_tv);
-      //#endif
 
       bool restart = false;
       for (Connection *conn: connections)
@@ -1052,31 +1032,26 @@ void do_mutilate(const vector<string>& servers, options_t& options,
     conn->start(); // Kick the Connection into motion.
   }
 
-  //  V("Start = %f", start);
-
   // Main event loop.
   while (1) {
     event_base_loop(base, loop_flag);
 
-    //#if USE_CLOCK_GETTIME
-    //    now = get_time();
-    //#else
     struct timeval now_tv;
     event_base_gettimeofday_cached(base, &now_tv);
     now = tv_to_double(&now_tv);
-    //#endif
 
     bool restart = false;
-    for (Connection *conn: connections)
-      if (!conn->check_exit_condition(now))
-        restart = true;
+    for (Connection *conn: connections) {
+      if (!conn->check_exit_condition(now)) restart = true;
+    }
 
     if (restart) continue;
     else break;
   }
 
-  if (master && !args.scan_given && !args.search_given)
+  if (master && !args.scan_given && !args.search_given) {
     V("stopped at %f  options.time = %d", get_time(), options.time);
+  }
 
   // Tear-down and accumulate stats.
   for (Connection *conn: connections) {
@@ -1093,7 +1068,6 @@ void do_mutilate(const vector<string>& servers, options_t& options,
 }
 
 void args_to_options(options_t* options) {
-  //  bzero(options, sizeof(options_t));
   options->connections = args.connections_arg;
   options->blocking = args.blocking_given;
   options->qps = args.qps_arg;
