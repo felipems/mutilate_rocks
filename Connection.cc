@@ -375,9 +375,7 @@ void Connection::drive_write_machine(double now) {
  */
 void Connection::read_callback() {
   struct evbuffer *input = bufferevent_get_input(bev);
-
   Operation *op = NULL;
-  bool done, full_read;
 
   if (op_queue.size() == 0) V("Spurious read callback.");
 
@@ -389,24 +387,15 @@ void Connection::read_callback() {
     case IDLE: return;  // We munched all the data we expected?
 
     case WAITING_FOR_GET:
-      assert(op_queue.size() > 0);
-      full_read = prot->handle_response(input, done);
-      if (!full_read) {
-        return;
-      } else if (done) {
-        finish_op(op); // sets read_state = IDLE
-      }
-      break;
-
     case WAITING_FOR_SET:
       assert(op_queue.size() > 0);
-      if (!prot->handle_response(input, done)) return;
-      finish_op(op);
+      if (!prot->handle_response(input)) return;
+      finish_op(op); // sets read_state = IDLE
       break;
 
     case LOADING:
       assert(op_queue.size() > 0);
-      if (!prot->handle_response(input, done)) return;
+      if (!prot->handle_response(input)) return;
       loader_completed++;
       pop_op();
 
@@ -426,7 +415,6 @@ void Connection::read_callback() {
           loader_issued++;
         }
       }
-
       break;
 
     case CONN_SETUP:

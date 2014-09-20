@@ -47,53 +47,50 @@ int ProtocolAscii::set_request(const char* key, const char* value, int len) {
 /**
  * Handle an ascii response.
  */
-bool ProtocolAscii::handle_response(evbuffer *input, bool &done) {
+bool ProtocolAscii::handle_response(evbuffer *input) {
   char *buf = NULL;
   int len;
   size_t n_read_out;
 
-  switch (read_state) {
+  while (1) {
+    switch (read_state) {
 
-  case WAITING_FOR_GET:
-  case WAITING_FOR_END:
-    buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
-    if (buf == NULL) return false;
+    case WAITING_FOR_GET:
+    case WAITING_FOR_END:
+      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+      if (buf == NULL) return false;
 
-    conn->stats.rx_bytes += n_read_out + 2;
+      conn->stats.rx_bytes += n_read_out + 2;
 
-    if (!strncmp(buf, "END", 3)) {
-      if (read_state == WAITING_FOR_GET) conn->stats.get_misses++;
-      read_state = WAITING_FOR_GET;
-      done = true;
-    } else if (!strncmp(buf, "VALUE", 5)) {
-      sscanf(buf, "VALUE %*s %*d %d", &len);
+      if (!strncmp(buf, "END", 3)) {
+        if (read_state == WAITING_FOR_GET) conn->stats.get_misses++;
+        read_state = WAITING_FOR_GET;
+        free(buf);
+        return true;
+      } else if (!strncmp(buf, "VALUE", 5)) {
+        sscanf(buf, "VALUE %*s %*d %d", &len);
 
-      // FIXME: check key name to see if it corresponds to the op at
-      // the head of the op queue?  This will be necessary to
-      // support "gets" where there may be misses.
+        // FIXME: check key name to see if it corresponds to the op at
+        // the head of the op queue?  This will be necessary to
+        // support "gets" where there may be misses.
 
-      data_length = len;
-      read_state = WAITING_FOR_GET_DATA;
-      done = false;
-    } else {
-      // must be a value line..
-      done = false;
-    }
-    free(buf);
-    return true;
+        data_length = len;
+        read_state = WAITING_FOR_GET_DATA;
+        free(buf);
+      } else {
+        DIE("Unknown line while expecting VALUE or END\n");
+      }
 
-  case WAITING_FOR_GET_DATA:
-    len = evbuffer_get_length(input);
-    if (len >= data_length + 2) {
+    case WAITING_FOR_GET_DATA:
+      len = evbuffer_get_length(input);
+      if (len < data_length + 2) return false;
       evbuffer_drain(input, data_length + 2);
       read_state = WAITING_FOR_END;
       conn->stats.rx_bytes += data_length + 2;
-      done = false;
-      return true;
-    }
-    return false;
+      break;
 
-  default: printf("state: %d\n", read_state); DIE("Unimplemented!");
+    default: printf("state: %d\n", read_state); DIE("Unimplemented!");
+    }
   }
 
   DIE("Shouldn't ever reach here...");
@@ -125,9 +122,7 @@ bool ProtocolBinary::setup_connection_w() {
  */
 bool ProtocolBinary::setup_connection_r(evbuffer* input) {
   if (!opts.sasl) return true;
-
-  bool b;
-  return handle_response(input, b);
+  return handle_response(input);
 }
 
 /**
@@ -169,12 +164,12 @@ int ProtocolBinary::set_request(const char* key, const char* value, int len) {
  * @param input evBuffer to read response from
  * @return  true if consumed, false if not enough data in buffer.
  */
-bool ProtocolBinary::handle_response(evbuffer *input, bool &done) {
+bool ProtocolBinary::handle_response(evbuffer *input) {
   // Read the first 24 bytes as a header
   int length = evbuffer_get_length(input);
   if (length < 24) return false;
   binary_header_t* h =
-          reinterpret_cast<binary_header_t*>(evbuffer_pullup(input, 24));
+    reinterpret_cast<binary_header_t*>(evbuffer_pullup(input, 24));
   assert(h);
 
   // Not whole response
@@ -196,7 +191,6 @@ bool ProtocolBinary::handle_response(evbuffer *input, bool &done) {
 
   evbuffer_drain(input, targetLen);
   conn->stats.rx_bytes += targetLen;
-  done = true;
   return true;
 }
 
@@ -228,91 +222,89 @@ int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
   return l;
 }
 
-bool ProtocolEtcd::handle_response(evbuffer* input, bool &done) {
+bool ProtocolEtcd::handle_response(evbuffer* input) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
 
-  switch (read_state) {
+  while (1) {
+    switch (read_state) {
 
-  case WAITING_FOR_HTTP:
-    buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
-    if (buf == NULL) return false;
+    case WAITING_FOR_HTTP:
+      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+      if (buf == NULL) return false;
 
-    conn->stats.rx_bytes += n_read_out + 2;
+      conn->stats.rx_bytes += n_read_out + 2;
 
-    if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
-      conn->stats.get_misses++;
-    } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
-      // nothing...
-    } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
-      // nothing...
-    } else {
-      DIE("Unknown HTTP response: %s\n", buf);
+      if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
+        conn->stats.get_misses++;
+      } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
+        // nothing...
+      } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
+        // nothing...
+      } else {
+        DIE("Unknown HTTP response: %s\n", buf);
+      }
+      free(buf);
+      read_state = WAITING_FOR_HTTP_BODY;
+
+    case WAITING_FOR_HTTP_BODY:
+      ptr = evbuffer_search(input, "}\r\n0\r\n\r\n", 8, NULL);
+      if (ptr.pos < 0) {
+        evbuffer_drain(input, evbuffer_get_length(input) - 7);
+        return false;
+      }
+      conn->stats.rx_bytes += ptr.pos + 8;
+      evbuffer_drain(input, ptr.pos + 8);
+      read_state = WAITING_FOR_HTTP;
+      return true;
+
+    default: printf("state: %d\n", read_state); DIE("Unimplemented!");
     }
-    free(buf);
-    read_state = WAITING_FOR_HTTP_BODY;
-    done = false;
-    return true;
-
-  case WAITING_FOR_HTTP_BODY:
-    ptr = evbuffer_search(input, "}\r\n0\r\n\r\n", 8, NULL);
-    if (ptr.pos < 0) {
-      evbuffer_drain(input, evbuffer_get_length(input) - 7);
-      return false;
-    }
-    conn->stats.rx_bytes += ptr.pos + 8;
-    evbuffer_drain(input, ptr.pos + 8);
-    read_state = WAITING_FOR_HTTP;
-    done = true;
-    return true;
-
-  default: printf("state: %d\n", read_state); DIE("Unimplemented!");
   }
 
   DIE("Shouldn't ever reach here...");
 }
 
-bool ProtocolEtcd2::handle_response(evbuffer* input, bool &done) {
+bool ProtocolEtcd2::handle_response(evbuffer* input) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
 
-  switch (read_state) {
+  while (1) {
+    switch (read_state) {
 
-  case WAITING_FOR_HTTP:
-    buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
-    if (buf == NULL) return false;
+    case WAITING_FOR_HTTP:
+      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+      if (buf == NULL) return false;
 
-    conn->stats.rx_bytes += n_read_out + 2;
+      conn->stats.rx_bytes += n_read_out + 2;
 
-    if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
-      conn->stats.get_misses++;
-    } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
-      // nothing...
-    } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
-      // nothing...
-    } else {
-      DIE("Unknown HTTP response: %s\n", buf);
+      if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
+        conn->stats.get_misses++;
+      } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
+        // nothing...
+      } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
+        // nothing...
+      } else {
+        DIE("Unknown HTTP response: %s\n", buf);
+      }
+      free(buf);
+      read_state = WAITING_FOR_HTTP_BODY;
+
+    case WAITING_FOR_HTTP_BODY:
+      ptr = evbuffer_search(input, "}}\n", 3, NULL);
+      if (ptr.pos < 0) {
+        evbuffer_drain(input, evbuffer_get_length(input) - 2);
+        return false;
+      }
+      conn->stats.rx_bytes += ptr.pos + 3;
+      evbuffer_drain(input, ptr.pos + 3);
+      read_state = WAITING_FOR_HTTP;
+      return true;
+
+    default: printf("state: %d\n", read_state); DIE("Unimplemented!");
     }
-    free(buf);
-    read_state = WAITING_FOR_HTTP_BODY;
-    done = false;
-    return true;
-
-  case WAITING_FOR_HTTP_BODY:
-    ptr = evbuffer_search(input, "}}\n", 3, NULL);
-    if (ptr.pos < 0) {
-      evbuffer_drain(input, evbuffer_get_length(input) - 2);
-      return false;
-    }
-    conn->stats.rx_bytes += ptr.pos + 3;
-    evbuffer_drain(input, ptr.pos + 3);
-    read_state = WAITING_FOR_HTTP;
-    done = true;
-    return true;
-
-  default: printf("state: %d\n", read_state); DIE("Unimplemented!");
   }
 
   DIE("Shouldn't ever reach here...");
