@@ -67,6 +67,10 @@ bool ProtocolAscii::handle_response(evbuffer *input) {
         read_state = WAITING_FOR_GET;
         free(buf);
         return true;
+      } else if (!strncmp(buf, "STORED", 6)) {
+        read_state = WAITING_FOR_GET;
+        free(buf);
+        return true;
       } else if (!strncmp(buf, "VALUE", 5)) {
         sscanf(buf, "VALUE %*s %*d %d", &len);
 
@@ -78,7 +82,7 @@ bool ProtocolAscii::handle_response(evbuffer *input) {
         read_state = WAITING_FOR_GET_DATA;
         free(buf);
       } else {
-        DIE("Unknown line while expecting VALUE or END\n");
+        DIE("Unknown line while expecting VALUE | STORED | END: %s\n", buf);
       }
 
     case WAITING_FOR_GET_DATA:
