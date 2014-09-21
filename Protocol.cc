@@ -198,9 +198,13 @@ bool ProtocolBinary::handle_response(evbuffer *input) {
   return true;
 }
 
+/* Etcd get request */
 static const char* get_req = "GET /v2/keys/test/%s HTTP/1.1\r\n\r\n";
+
+/* Etcd (linearizable) get request */
 static const char* get_req_linear = "GET /v2/keys/test/%s?quorum=true HTTP/1.1\r\n\r\n";
 
+/* Perform a get request against etcd 0.4.6 */
 int ProtocolEtcd::get_request(const char* key) {
   int l;
   const char *req = get_req;
@@ -212,6 +216,7 @@ int ProtocolEtcd::get_request(const char* key) {
   return l;
 }
 
+/* Perform a set request against etcd 0.4.6 */
 int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
   int l;
   l = evbuffer_add_printf(
@@ -226,6 +231,7 @@ int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
   return l;
 }
 
+/* Handle a response from etcd 0.4.6 */
 bool ProtocolEtcd::handle_response(evbuffer* input) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
@@ -255,6 +261,7 @@ bool ProtocolEtcd::handle_response(evbuffer* input) {
     case WAITING_FOR_HTTP_BODY:
       ptr = evbuffer_search(input, "}\r\n0\r\n\r\n", 8, NULL);
       if (ptr.pos < 0) {
+        conn->stats.rx_bytes += evbuffer_get_length(input) - 7;
         evbuffer_drain(input, evbuffer_get_length(input) - 7);
         return false;
       }
@@ -270,6 +277,7 @@ bool ProtocolEtcd::handle_response(evbuffer* input) {
   DIE("Shouldn't ever reach here...");
 }
 
+/* Handle a response from etcd HEAD */
 bool ProtocolEtcd2::handle_response(evbuffer* input) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
@@ -299,6 +307,7 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
     case WAITING_FOR_HTTP_BODY:
       ptr = evbuffer_search(input, "}}\n", 3, NULL);
       if (ptr.pos < 0) {
+        conn->stats.rx_bytes += evbuffer_get_length(input) - 2;
         evbuffer_drain(input, evbuffer_get_length(input) - 2);
         return false;
       }
