@@ -324,14 +324,14 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
       }
 
     case WAITING_FOR_HTTP_BODY:
-      ptr = evbuffer_search(input, "}}\n", 3, NULL);
+      ptr = evbuffer_search(input, "}\n", 2, NULL);
       if (ptr.pos < 0) {
-        conn->stats.rx_bytes += evbuffer_get_length(input) - 2;
-        evbuffer_drain(input, evbuffer_get_length(input) - 2);
+        conn->stats.rx_bytes += evbuffer_get_length(input) - 1;
+        evbuffer_drain(input, evbuffer_get_length(input) - 1);
         return false;
       }
-      conn->stats.rx_bytes += ptr.pos + 3;
-      evbuffer_drain(input, ptr.pos + 3);
+      conn->stats.rx_bytes += ptr.pos + 2;
+      evbuffer_drain(input, ptr.pos + 2);
       read_state = WAITING_FOR_HTTP;
       return true;
 
