@@ -455,7 +455,8 @@ void Connection::read_callback(server_t* serv) {
 
     case WAITING_FOR_GET:
     case WAITING_FOR_SET:
-      assert(serv->op_queue.size() > 0);
+      // XXX: Spurious event on leader change... safe to ignore for now.
+      // assert(serv->op_queue.size() > 0);
       if (!serv->prot->handle_response(input)) return;
       finish_op(serv, op); // sets read_state = IDLE
       break;
