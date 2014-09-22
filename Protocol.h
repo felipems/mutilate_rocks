@@ -82,6 +82,7 @@ protected:
     IDLE,
     WAITING_FOR_HTTP,
     WAITING_FOR_HTTP_BODY,
+    LEADER_CHANGED,
   };
 
   read_fsm read_state;

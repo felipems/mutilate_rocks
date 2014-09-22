@@ -26,12 +26,13 @@ class Connection;
 class Protocol;
 
 typedef struct {
-    int                 id;
-    string              host;
-    string              port;
-    Connection*         conn;
-    Protocol*           prot;
-    struct bufferevent* bev;
+    int                   id;
+    string                host;
+    string                port;
+    Connection*           conn;
+    Protocol*             prot;
+    struct bufferevent*   bev;
+    std::queue<Operation> op_queue;
 } server_t;
 
 void bev_event_cb(struct bufferevent *bev, short events, void *ptr);
@@ -51,9 +52,10 @@ public:
 
   bool is_ready() { return read_state == IDLE; }
   void set_priority(int pri);
+  void set_leader(unsigned int id);
 
   // state commands
-  void start() { drive_write_machine(initial_server()); }
+  void start() { drive_write_machine(leader); }
   void start_loading();
   void reset();
   bool check_exit_condition(double now = 0.0);
@@ -62,10 +64,11 @@ public:
   void event_callback(server_t* serv, short events);
   void read_callback(server_t* serv);
   void write_callback();
-  void timer_callback(server_t* serv);
+  void timer_callback();
 
 private:
   vector<server_t> servers;
+  server_t* leader;
 
   struct event_base *base;
   struct evdns_base *evdns;
@@ -103,15 +106,13 @@ private:
   Generator *keysize;
   KeyGenerator *keygen;
   Generator *iagen;
-  std::queue<Operation> op_queue;
 
-  // misc functions
-  server_t* initial_server();
+  // server functions
   server_t parse_hoststring(string s);
   void connect_server(server_t &serv);
 
   // state machine functions / event processing
-  void pop_op();
+  void pop_op(server_t* serv);
   void finish_op(server_t* serv, Operation *op);
   void issue_something(server_t* serv, double now = 0.0);
   void drive_write_machine(server_t* serv, double now = 0.0);

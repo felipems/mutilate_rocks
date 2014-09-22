@@ -56,9 +56,12 @@ Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
 
   last_tx = last_rx = 0.0;
 
+  set_leader(1);
   for (server_t &s : servers) {
     connect_server(s);
   }
+
+  timer = evtimer_new(base, timer_cb, this);
 }
 
 /**
@@ -108,8 +111,6 @@ void Connection::connect_server(server_t &serv) {
                                           atoi(serv.port.c_str()))) {
     DIE("bufferevent_socket_connect_hostname()");
   }
-
-  timer = evtimer_new(base, timer_cb, &serv);
 }
 
 /**
@@ -138,11 +139,24 @@ server_t Connection::parse_hoststring(string s) {
 }
 
 /**
+ * Set the leader to use for this connection.
+ */
+void Connection::set_leader(unsigned int id) {
+  if (0 < id && id <= servers.size()) {
+    leader = &servers[id - 1];
+  } else {
+    DIE("Leader ID out of range! %d (%d)\n", id, servers.size());
+  }
+}
+
+/**
  * Reset the connection back to an initial, fresh state.
  */
 void Connection::reset() {
   // FIXME: Actually check the connection, drain all bufferevents, drain op_q.
-  assert(op_queue.size() == 0);
+  for (auto &s : servers) {
+    assert(s.op_queue.size() == 0);
+  }
   evtimer_del(timer);
   read_state = IDLE;
   write_state = INIT_WRITE;
@@ -153,7 +167,7 @@ void Connection::reset() {
  * Set our event processing priority.
  */
 void Connection::set_priority(int pri) {
-  for (auto s : servers) {
+  for (auto &s : servers) {
     if (bufferevent_priority_set(s.bev, pri)) {
       DIE("bufferevent_set_priority(bev, %d) failed", pri);
     }
@@ -161,17 +175,9 @@ void Connection::set_priority(int pri) {
 }
 
 /**
- * Server to start with.
- */
-server_t* Connection::initial_server() {
-  return &servers.front();
-}
-
-/**
  * Load any required test data onto the server.
  */
 void Connection::start_loading() {
-  server_t* serv = initial_server();
   read_state = LOADING;
   loader_issued = loader_completed = 0;
 
@@ -181,7 +187,7 @@ void Connection::start_loading() {
     int index = lrand48() % (1024 * 1024);
     string keystr = keygen->generate(loader_issued);
     strcpy(key, keystr.c_str());
-    issue_set(serv, key, &random_char[index], valuesize->generate());
+    issue_set(leader, key, &random_char[index], valuesize->generate());
     loader_issued++;
   }
 }
@@ -227,7 +233,7 @@ void Connection::issue_get(server_t* serv, const char* key, double now) {
 #endif
 
   op.type = Operation::GET;
-  op_queue.push(op);
+  serv->op_queue.push(op);
 
   if (read_state == IDLE) read_state = WAITING_FOR_GET;
   l = serv->prot->get_request(key);
@@ -250,7 +256,7 @@ void Connection::issue_set(server_t* serv, const char* key, const char* value,
 #endif
 
   op.type = Operation::SET;
-  op_queue.push(op);
+  serv->op_queue.push(op);
 
   if (read_state == IDLE) read_state = WAITING_FOR_SET;
   l = serv->prot->set_request(key, value, length);
@@ -260,17 +266,17 @@ void Connection::issue_set(server_t* serv, const char* key, const char* value,
 /**
  * Return the oldest live operation in progress.
  */
-void Connection::pop_op() {
-  assert(op_queue.size() > 0);
+void Connection::pop_op(server_t* serv) {
+  assert(serv->op_queue.size() > 0);
 
-  op_queue.pop();
+  serv->op_queue.pop();
 
   if (read_state == LOADING) return;
   read_state = IDLE;
 
   // Advance the read state machine.
-  if (op_queue.size() > 0) {
-    Operation& op = op_queue.front();
+  if (serv->op_queue.size() > 0) {
+    Operation& op = serv->op_queue.front();
     switch (op.type) {
     case Operation::GET: read_state = WAITING_FOR_GET; break;
     case Operation::SET: read_state = WAITING_FOR_SET; break;
@@ -305,8 +311,8 @@ void Connection::finish_op(server_t* serv, Operation *op) {
   }
 
   last_rx = now;
-  pop_op();
-  drive_write_machine(serv);
+  pop_op(serv);
+  drive_write_machine(leader);
 }
 
 /**
@@ -325,15 +331,15 @@ bool Connection::check_exit_condition(double now) {
  */
 void Connection::event_callback(server_t* serv, short events) {
   if (events & BEV_EVENT_CONNECTED) {
-    D("Connected to %s:%s.", serv->host.c_str(), serv->port.c_str());
+    D("Connected to %s:%s.\n", serv->host.c_str(), serv->port.c_str());
     int fd = bufferevent_getfd(serv->bev);
-    if (fd < 0) DIE("bufferevent_getfd");
+    if (fd < 0) DIE("bufferevent_getfd\n");
 
     if (!options.no_nodelay) {
       int one = 1;
       if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
                      (void *) &one, sizeof(one)) < 0)
-        DIE("setsockopt()");
+        DIE("setsockopt()\n");
     }
 
     read_state = CONN_SETUP;
@@ -343,11 +349,11 @@ void Connection::event_callback(server_t* serv, short events) {
 
   } else if (events & BEV_EVENT_ERROR) {
     int err = bufferevent_socket_get_dns_error(serv->bev);
-    if (err) DIE("DNS error: %s", evutil_gai_strerror(err));
-    DIE("BEV_EVENT_ERROR: %s", strerror(errno));
+    if (err) DIE("DNS error: %s\n", evutil_gai_strerror(err));
+    DIE("BEV_EVENT_ERROR: %s\n", strerror(errno));
 
   } else if (events & BEV_EVENT_EOF) {
-    DIE("Unexpected EOF from server.");
+    DIE("Unexpected EOF from server.\n");
   }
 }
 
@@ -376,7 +382,7 @@ void Connection::drive_write_machine(server_t* serv, double now) {
       break;
 
     case ISSUING:
-      if (op_queue.size() >= (size_t) options.depth) {
+      if (serv->op_queue.size() >= (size_t) options.depth) {
         write_state = WAITING_FOR_OPQ;
         return;
       } else if (now < next_time) {
@@ -395,12 +401,12 @@ void Connection::drive_write_machine(server_t* serv, double now) {
 
       issue_something(serv, now);
       last_tx = now;
-      stats.log_op(op_queue.size());
+      stats.log_op(serv->op_queue.size());
       next_time += iagen->generate();
 
       if (options.skip && options.lambda > 0.0 &&
           now - next_time > 0.005000 &&
-          op_queue.size() >= (size_t) options.depth) {
+          serv->op_queue.size() >= (size_t) options.depth) {
 
         while (next_time < now - 0.004000) {
           stats.skips++;
@@ -422,7 +428,7 @@ void Connection::drive_write_machine(server_t* serv, double now) {
       break;
 
     case WAITING_FOR_OPQ:
-      if (op_queue.size() >= (size_t) options.depth) return;
+      if (serv->op_queue.size() >= (size_t) options.depth) return;
       write_state = ISSUING;
       break;
 
@@ -438,10 +444,10 @@ void Connection::read_callback(server_t* serv) {
   struct evbuffer *input = bufferevent_get_input(serv->bev);
   Operation *op = NULL;
 
-  if (op_queue.size() == 0) V("Spurious read callback.");
+  if (serv->op_queue.size() == 0) V("Spurious read callback.");
 
   while (1) {
-    if (op_queue.size() > 0) op = &op_queue.front();
+    if (serv->op_queue.size() > 0) op = &serv->op_queue.front();
 
     switch (read_state) {
     case INIT_READ: DIE("event from uninitialized connection");
@@ -449,16 +455,16 @@ void Connection::read_callback(server_t* serv) {
 
     case WAITING_FOR_GET:
     case WAITING_FOR_SET:
-      assert(op_queue.size() > 0);
+      assert(serv->op_queue.size() > 0);
       if (!serv->prot->handle_response(input)) return;
       finish_op(serv, op); // sets read_state = IDLE
       break;
 
     case LOADING:
-      assert(op_queue.size() > 0);
+      assert(serv->op_queue.size() > 0);
       if (!serv->prot->handle_response(input)) return;
       loader_completed++;
-      pop_op();
+      pop_op(serv);
 
       if (loader_completed == options.records) {
         D("Finished loading.");
@@ -497,8 +503,8 @@ void Connection::write_callback() {}
 /**
  * Callback for timer timeouts.
  */
-void Connection::timer_callback(server_t* serv) {
-  drive_write_machine(serv);
+void Connection::timer_callback() {
+  drive_write_machine(leader);
 }
 
 
@@ -519,7 +525,7 @@ void bev_write_cb(struct bufferevent *bev, void *ptr) {
 }
 
 void timer_cb(evutil_socket_t fd, short what, void *ptr) {
-  server_t* serv = (server_t*) ptr;
-  serv->conn->timer_callback(serv);
+  Connection* conn = (Connection*) ptr;
+  conn->timer_callback();
 }
 

@@ -282,8 +282,12 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
+  int new_leader = 0;
+  bool leader_changed;
 
   while (1) {
+    leader_changed = false;
+
     switch (read_state) {
 
     case WAITING_FOR_HTTP:
@@ -298,11 +302,26 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
         // nothing...
       } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
         // nothing...
+      } else if (!strncmp(buf, "HTTP/1.1 424 status code 424", n_read_out)) {
+        // 404 -- where leader has moved.
+        leader_changed = true;
+        conn->stats.get_misses++;
+      } else if (!strncmp(buf, "HTTP/1.1 422 status code 422", n_read_out)) {
+        // 200 -- where leader has moved.
+        leader_changed = true;
+      } else if (!strncmp(buf, "HTTP/1.1 423 status code 423", n_read_out)) {
+        // 201 created -- where leader has moved.
+        leader_changed = true;
       } else {
         DIE("Unknown HTTP response: %s\n", buf);
       }
       free(buf);
-      read_state = WAITING_FOR_HTTP_BODY;
+      if (leader_changed) {
+        read_state = LEADER_CHANGED;
+        break;
+      } else {
+        read_state = WAITING_FOR_HTTP_BODY;
+      }
 
     case WAITING_FOR_HTTP_BODY:
       ptr = evbuffer_search(input, "}}\n", 3, NULL);
@@ -315,6 +334,23 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
       evbuffer_drain(input, ptr.pos + 3);
       read_state = WAITING_FOR_HTTP;
       return true;
+
+    case LEADER_CHANGED:
+      printf("Leader changed... ");
+      ptr = evbuffer_search(input, "X-Etcd-Leader: ", 15, NULL);
+      if (ptr.pos < 0) {
+        conn->stats.rx_bytes += evbuffer_get_length(input) - 14;
+        evbuffer_drain(input, evbuffer_get_length(input) - 14);
+        return false;
+      }
+      conn->stats.rx_bytes += ptr.pos + 15;
+      evbuffer_drain(input, ptr.pos + 15);
+      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+      sscanf(buf, "%d", &new_leader);
+      printf("%d\n", new_leader);
+      conn->set_leader(new_leader);
+      read_state = WAITING_FOR_HTTP_BODY;
+      break;
 
     default: printf("state: %d\n", read_state); DIE("Unimplemented!");
     }
