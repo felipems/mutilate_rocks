@@ -32,8 +32,7 @@ class Protocol;
 class Connection {
 public:
   Connection(struct event_base* _base, struct evdns_base* _evdns,
-             string _hostname, string _port, options_t options,
-             bool sampling = true);
+             options_t options, string host, bool sampling = true);
   ~Connection();
 
   double start_time; // Time when this connection began operations.
@@ -98,6 +97,9 @@ private:
   KeyGenerator *keygen;
   Generator *iagen;
   std::queue<Operation> op_queue;
+
+  // misc functions
+  void split_hoststring(string s);
 
   // state machine functions / event processing
   void pop_op();

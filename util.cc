@@ -1,9 +1,11 @@
-#include <inttypes.h>
+#include <arpa/inet.h>
 #include <stdio.h>
-#include <sys/time.h>
+#include <string.h>
 #include <unistd.h>
 
-#include "mutilate.h"
+#include <event2/bufferevent.h>
+
+#include "log.h"
 #include "util.h"
 
 void sleep_time(double duration) {
@@ -29,3 +31,45 @@ uint64_t fnv_64_buf(const void* buf, size_t len) {
 void generate_key(int n, int length, char *buf) {
   snprintf(buf, length + 1, "%0*d", length, n);
 }
+
+/**
+ * Convert a hostname into an IP address.
+ */
+string name_to_ipaddr(string host) {
+  void *ptr = NULL;
+  char ipaddr[16];
+  struct evutil_addrinfo hints;
+  struct evutil_addrinfo* answer = NULL;
+  int err;
+
+  /* Build the hints to tell getaddrinfo how to act. */
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family   = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
+  hints.ai_flags    = EVUTIL_AI_ADDRCONFIG;
+
+  /* Look up the hostname. */
+  err = evutil_getaddrinfo(host.c_str(), NULL, &hints, &answer);
+  if (err < 0) {
+    DIE("Error while resolving '%s': %s",
+        host.c_str(), evutil_gai_strerror(err));
+  } else if (answer == NULL) {
+    DIE("No DNS answer.");
+  }
+
+  switch (answer->ai_family) {
+  case AF_INET:
+    ptr = &((struct sockaddr_in *) answer->ai_addr)->sin_addr;
+    break;
+  case AF_INET6:
+    ptr = &((struct sockaddr_in6 *) answer->ai_addr)->sin6_addr;
+    break;
+  }
+
+  inet_ntop (answer->ai_family, ptr, ipaddr, 16);
+
+  D("Resolved %s to %s", host.c_str(), ipaddr);
+  return string(ipaddr);
+}
+

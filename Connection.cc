@@ -20,14 +20,16 @@
  * Create a new connection to a server endpoint.
  */
 Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
-                       string _hostname, string _port, options_t _options,
-                       bool sampling) :
+                       options_t _options, string host, bool sampling) :
   start_time(0), stats(sampling), options(_options),
-  hostname(_hostname), port(_port), base(_base), evdns(_evdns)
+  hostname(host), port("11211"), base(_base), evdns(_evdns)
 {
   valuesize = createGenerator(options.valuesize);
   keysize = createGenerator(options.keysize);
   keygen = new KeyGenerator(keysize, options.records);
+
+  split_hoststring(hostname);
+  hostname = name_to_ipaddr(hostname);
 
   if (options.lambda <= 0) {
     iagen = createGenerator("0");
@@ -84,6 +86,23 @@ Connection::~Connection() {
   delete keygen;
   delete keysize;
   delete valuesize;
+}
+
+/**
+ * Split host into host:port using strtok().
+ */
+void Connection::split_hoststring(string s) {
+  char *saveptr = NULL; // For reentrant strtok().
+  char *s_copy = new char[s.length() + 1];
+  strcpy(s_copy, s.c_str());
+
+  char *h_ptr = strtok_r(s_copy, ":", &saveptr);
+  char *p_ptr = strtok_r(NULL, ":", &saveptr);
+  if (h_ptr == NULL) DIE("strtok(.., \":\") failed to parse %s", s.c_str());
+
+  hostname = h_ptr;
+  if (p_ptr) port = p_ptr;
+  delete[] s_copy;
 }
 
 /**
