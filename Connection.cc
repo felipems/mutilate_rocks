@@ -1,5 +1,9 @@
 #include <netinet/tcp.h>
 
+#include <string>
+#include <sstream>
+#include <vector>
+
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 #include <event2/dns.h>
@@ -20,16 +24,18 @@
  * Create a new connection to a server endpoint.
  */
 Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
-                       options_t _options, string host, bool sampling) :
-  start_time(0), stats(sampling), options(_options),
-  hostname(host), port("11211"), base(_base), evdns(_evdns)
+                       options_t _options, string hosts, bool sampling) :
+  start_time(0), stats(sampling), options(_options), base(_base), evdns(_evdns)
 {
   valuesize = createGenerator(options.valuesize);
   keysize = createGenerator(options.keysize);
   keygen = new KeyGenerator(keysize, options.records);
 
-  split_hoststring(hostname);
-  hostname = name_to_ipaddr(hostname);
+  stringstream ss(hosts);
+  string item;
+  while (getline(ss, item, '|')) {
+    servers.push_back(parse_hoststring(item));
+  }
 
   if (options.lambda <= 0) {
     iagen = createGenerator("0");
@@ -50,8 +56,38 @@ Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
 
   last_tx = last_rx = 0.0;
 
+  for (server_t &s : servers) {
+    connect_server(s);
+  }
+}
+
+/**
+ * Destroy a connection, performing cleanup.
+ */
+Connection::~Connection() {
+  event_free(timer);
+  timer = NULL;
+
+  for (server_t &s : servers) {
+    if (s.bev != NULL) bufferevent_free(s.bev);
+    if (s.prot != NULL) delete s.prot;
+  }
+
+  delete iagen;
+  delete keygen;
+  delete keysize;
+  delete valuesize;
+}
+
+/**
+ * Connect to the specified server.
+ */
+void Connection::connect_server(server_t &serv) {
+  struct bufferevent* bev;
+  Protocol* prot;
+
   bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
-  bufferevent_setcb(bev, bev_read_cb, bev_write_cb, bev_event_cb, this);
+  bufferevent_setcb(bev, bev_read_cb, bev_write_cb, bev_event_cb, &serv);
   bufferevent_enable(bev, EV_READ | EV_WRITE);
 
   if (options.etcd2) {
@@ -64,34 +100,24 @@ Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
     prot = new ProtocolAscii(options, this, bev);
   }
 
+  serv.bev  = bev;
+  serv.prot = prot;
+
   if (bufferevent_socket_connect_hostname(bev, evdns, AF_UNSPEC,
-                                          hostname.c_str(),
-                                          atoi(port.c_str()))) {
+                                          serv.host.c_str(),
+                                          atoi(serv.port.c_str()))) {
     DIE("bufferevent_socket_connect_hostname()");
   }
 
-  timer = evtimer_new(base, timer_cb, this);
-}
-
-/**
- * Destroy a connection, performing cleanup.
- */
-Connection::~Connection() {
-  event_free(timer);
-  timer = NULL;
-  // FIXME:  W("Drain op_q?");
-  bufferevent_free(bev);
-
-  delete iagen;
-  delete keygen;
-  delete keysize;
-  delete valuesize;
+  timer = evtimer_new(base, timer_cb, &serv);
 }
 
 /**
  * Split host into host:port using strtok().
  */
-void Connection::split_hoststring(string s) {
+server_t Connection::parse_hoststring(string s) {
+  static int id = 0;
+  server_t serv; 
   char *saveptr = NULL; // For reentrant strtok().
   char *s_copy = new char[s.length() + 1];
   strcpy(s_copy, s.c_str());
@@ -100,9 +126,15 @@ void Connection::split_hoststring(string s) {
   char *p_ptr = strtok_r(NULL, ":", &saveptr);
   if (h_ptr == NULL) DIE("strtok(.., \":\") failed to parse %s", s.c_str());
 
-  hostname = h_ptr;
-  if (p_ptr) port = p_ptr;
+  serv.id   = ++id;
+  serv.host = name_to_ipaddr(h_ptr);
+  serv.port = p_ptr ? p_ptr : "11211";
+  serv.conn = this;
+  serv.prot = NULL;
+  serv.bev  = NULL;
   delete[] s_copy;
+
+  return serv;
 }
 
 /**
@@ -121,15 +153,25 @@ void Connection::reset() {
  * Set our event processing priority.
  */
 void Connection::set_priority(int pri) {
-  if (bufferevent_priority_set(bev, pri)) {
-    DIE("bufferevent_set_priority(bev, %d) failed", pri);
+  for (auto s : servers) {
+    if (bufferevent_priority_set(s.bev, pri)) {
+      DIE("bufferevent_set_priority(bev, %d) failed", pri);
+    }
   }
+}
+
+/**
+ * Server to start with.
+ */
+server_t* Connection::initial_server() {
+  return &servers.front();
 }
 
 /**
  * Load any required test data onto the server.
  */
 void Connection::start_loading() {
+  server_t* serv = initial_server();
   read_state = LOADING;
   loader_issued = loader_completed = 0;
 
@@ -139,7 +181,7 @@ void Connection::start_loading() {
     int index = lrand48() % (1024 * 1024);
     string keystr = keygen->generate(loader_issued);
     strcpy(key, keystr.c_str());
-    issue_set(key, &random_char[index], valuesize->generate());
+    issue_set(serv, key, &random_char[index], valuesize->generate());
     loader_issued++;
   }
 }
@@ -147,7 +189,7 @@ void Connection::start_loading() {
 /**
  * Issue either a get or set request to the server according to our probability distribution.
  */
-void Connection::issue_something(double now) {
+void Connection::issue_something(server_t* serv, double now) {
   char key[256];
   // FIXME: generate key distribution here!
   string keystr = keygen->generate(lrand48() % options.records);
@@ -155,16 +197,16 @@ void Connection::issue_something(double now) {
 
   if (drand48() < options.update) {
     int index = lrand48() % (1024 * 1024);
-    issue_set(key, &random_char[index], valuesize->generate(), now);
+    issue_set(serv, key, &random_char[index], valuesize->generate(), now);
   } else {
-    issue_get(key, now);
+    issue_get(serv, key, now);
   }
 }
 
 /**
  * Issue a get request to the server.
  */
-void Connection::issue_get(const char* key, double now) {
+void Connection::issue_get(server_t* serv, const char* key, double now) {
   Operation op;
   int l;
 
@@ -188,15 +230,15 @@ void Connection::issue_get(const char* key, double now) {
   op_queue.push(op);
 
   if (read_state == IDLE) read_state = WAITING_FOR_GET;
-  l = prot->get_request(key);
+  l = serv->prot->get_request(key);
   if (read_state != LOADING) stats.tx_bytes += l;
 }
 
 /**
  * Issue a set request to the server.
  */
-void Connection::issue_set(const char* key, const char* value, int length,
-                           double now) {
+void Connection::issue_set(server_t* serv, const char* key, const char* value,
+                           int length, double now) {
   Operation op;
   int l;
 
@@ -211,7 +253,7 @@ void Connection::issue_set(const char* key, const char* value, int length,
   op_queue.push(op);
 
   if (read_state == IDLE) read_state = WAITING_FOR_SET;
-  l = prot->set_request(key, value, length);
+  l = serv->prot->set_request(key, value, length);
   if (read_state != LOADING) stats.tx_bytes += l;
 }
 
@@ -241,7 +283,7 @@ void Connection::pop_op() {
  * Finish up (record stats) an operation that just returned from the
  * server.
  */
-void Connection::finish_op(Operation *op) {
+void Connection::finish_op(server_t* serv, Operation *op) {
   double now;
 #if USE_CACHED_TIME
   struct timeval now_tv;
@@ -264,7 +306,7 @@ void Connection::finish_op(Operation *op) {
 
   last_rx = now;
   pop_op();
-  drive_write_machine();
+  drive_write_machine(serv);
 }
 
 /**
@@ -281,10 +323,10 @@ bool Connection::check_exit_condition(double now) {
 /**
  * Handle new connection and error events.
  */
-void Connection::event_callback(short events) {
+void Connection::event_callback(server_t* serv, short events) {
   if (events & BEV_EVENT_CONNECTED) {
-    D("Connected to %s:%s.", hostname.c_str(), port.c_str());
-    int fd = bufferevent_getfd(bev);
+    D("Connected to %s:%s.", serv->host.c_str(), serv->port.c_str());
+    int fd = bufferevent_getfd(serv->bev);
     if (fd < 0) DIE("bufferevent_getfd");
 
     if (!options.no_nodelay) {
@@ -295,12 +337,12 @@ void Connection::event_callback(short events) {
     }
 
     read_state = CONN_SETUP;
-    if (prot->setup_connection_w()) {
+    if (serv->prot->setup_connection_w()) {
       read_state = IDLE;
     }
 
   } else if (events & BEV_EVENT_ERROR) {
-    int err = bufferevent_socket_get_dns_error(bev);
+    int err = bufferevent_socket_get_dns_error(serv->bev);
     if (err) DIE("DNS error: %s", evutil_gai_strerror(err));
     DIE("BEV_EVENT_ERROR: %s", strerror(errno));
 
@@ -315,7 +357,7 @@ void Connection::event_callback(short events) {
  *
  * Note that this function loops. Be wary of break vs. return.
  */
-void Connection::drive_write_machine(double now) {
+void Connection::drive_write_machine(server_t* serv, double now) {
   if (now == 0.0) now = get_time();
 
   double delay;
@@ -351,7 +393,7 @@ void Connection::drive_write_machine(double now) {
         return;
       }
 
-      issue_something(now);
+      issue_something(serv, now);
       last_tx = now;
       stats.log_op(op_queue.size());
       next_time += iagen->generate();
@@ -392,8 +434,8 @@ void Connection::drive_write_machine(double now) {
 /**
  * Handle incoming data (responses).
  */
-void Connection::read_callback() {
-  struct evbuffer *input = bufferevent_get_input(bev);
+void Connection::read_callback(server_t* serv) {
+  struct evbuffer *input = bufferevent_get_input(serv->bev);
   Operation *op = NULL;
 
   if (op_queue.size() == 0) V("Spurious read callback.");
@@ -408,13 +450,13 @@ void Connection::read_callback() {
     case WAITING_FOR_GET:
     case WAITING_FOR_SET:
       assert(op_queue.size() > 0);
-      if (!prot->handle_response(input)) return;
-      finish_op(op); // sets read_state = IDLE
+      if (!serv->prot->handle_response(input)) return;
+      finish_op(serv, op); // sets read_state = IDLE
       break;
 
     case LOADING:
       assert(op_queue.size() > 0);
-      if (!prot->handle_response(input)) return;
+      if (!serv->prot->handle_response(input)) return;
       loader_completed++;
       pop_op();
 
@@ -429,7 +471,7 @@ void Connection::read_callback() {
           string keystr = keygen->generate(loader_issued);
           strcpy(key, keystr.c_str());
           int index = lrand48() % (1024 * 1024);
-          issue_set(key, &random_char[index], valuesize->generate());
+          issue_set(serv, key, &random_char[index], valuesize->generate());
 
           loader_issued++;
         }
@@ -438,7 +480,7 @@ void Connection::read_callback() {
 
     case CONN_SETUP:
       assert(options.binary);
-      if (!prot->setup_connection_r(input)) return;
+      if (!serv->prot->setup_connection_r(input)) return;
       read_state = IDLE;
       break;
 
@@ -455,27 +497,29 @@ void Connection::write_callback() {}
 /**
  * Callback for timer timeouts.
  */
-void Connection::timer_callback() { drive_write_machine(); }
+void Connection::timer_callback(server_t* serv) {
+  drive_write_machine(serv);
+}
 
 
 /* The follow are C trampolines for libevent callbacks. */
 void bev_event_cb(struct bufferevent *bev, short events, void *ptr) {
-  Connection* conn = (Connection*) ptr;
-  conn->event_callback(events);
+  server_t* serv = (server_t*) ptr;
+  serv->conn->event_callback(serv, events);
 }
 
 void bev_read_cb(struct bufferevent *bev, void *ptr) {
-  Connection* conn = (Connection*) ptr;
-  conn->read_callback();
+  server_t* serv = (server_t*) ptr;
+  serv->conn->read_callback(serv);
 }
 
 void bev_write_cb(struct bufferevent *bev, void *ptr) {
-  Connection* conn = (Connection*) ptr;
-  conn->write_callback();
+  server_t* serv = (server_t*) ptr;
+  serv->conn->write_callback();
 }
 
 void timer_cb(evutil_socket_t fd, short what, void *ptr) {
-  Connection* conn = (Connection*) ptr;
-  conn->timer_callback();
+  server_t* serv = (server_t*) ptr;
+  serv->conn->timer_callback(serv);
 }
 

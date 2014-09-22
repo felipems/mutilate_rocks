@@ -14,7 +14,7 @@ class Protocol {
 public:
   Protocol(options_t _opts, Connection* _conn, bufferevent* _bev):
     opts(_opts), conn(_conn), bev(_bev) {};
-  ~Protocol() {};
+  virtual ~Protocol() {};
 
   virtual bool setup_connection_w() = 0;
   virtual bool setup_connection_r(evbuffer* input) = 0;
@@ -31,10 +31,7 @@ protected:
 class ProtocolAscii : public Protocol {
 public:
   ProtocolAscii(options_t opts, Connection* conn, bufferevent* bev):
-    Protocol(opts, conn, bev) {
-    read_state = IDLE;
-  };
-
+    Protocol(opts, conn, bev) { read_state = IDLE; };
   ~ProtocolAscii() {};
 
   virtual bool setup_connection_w() { return true; }
@@ -71,8 +68,8 @@ public:
 class ProtocolEtcd : public Protocol {
 public:
   ProtocolEtcd(options_t opts, Connection* conn, bufferevent* bev):
-    Protocol(opts, conn, bev) {};
-  ~ProtocolEtcd() {};
+    Protocol(opts, conn, bev) { read_state = IDLE; };
+  virtual ~ProtocolEtcd() {};
 
   virtual bool setup_connection_w() { return true; }
   virtual bool setup_connection_r(evbuffer* input) { return true; }

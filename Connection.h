@@ -22,12 +22,22 @@
 
 using namespace std;
 
+class Connection;
+class Protocol;
+
+typedef struct {
+    int                 id;
+    string              host;
+    string              port;
+    Connection*         conn;
+    Protocol*           prot;
+    struct bufferevent* bev;
+} server_t;
+
 void bev_event_cb(struct bufferevent *bev, short events, void *ptr);
 void bev_read_cb(struct bufferevent *bev, void *ptr);
 void bev_write_cb(struct bufferevent *bev, void *ptr);
 void timer_cb(evutil_socket_t fd, short what, void *ptr);
-
-class Protocol;
 
 class Connection {
 public:
@@ -43,24 +53,22 @@ public:
   void set_priority(int pri);
 
   // state commands
-  void start() { drive_write_machine(); }
+  void start() { drive_write_machine(initial_server()); }
   void start_loading();
   void reset();
   bool check_exit_condition(double now = 0.0);
 
   // event callbacks
-  void event_callback(short events);
-  void read_callback();
+  void event_callback(server_t* serv, short events);
+  void read_callback(server_t* serv);
   void write_callback();
-  void timer_callback();
+  void timer_callback(server_t* serv);
 
 private:
-  string hostname;
-  string port;
+  vector<server_t> servers;
 
   struct event_base *base;
   struct evdns_base *evdns;
-  struct bufferevent *bev;
 
   struct event *timer; // Used to control inter-transmission time.
   double next_time;    // Inter-transmission time parameters.
@@ -91,7 +99,6 @@ private:
   // Parameters to track progress of the data loader.
   int loader_issued, loader_completed;
 
-  Protocol *prot;
   Generator *valuesize;
   Generator *keysize;
   KeyGenerator *keygen;
@@ -99,18 +106,20 @@ private:
   std::queue<Operation> op_queue;
 
   // misc functions
-  void split_hoststring(string s);
+  server_t* initial_server();
+  server_t parse_hoststring(string s);
+  void connect_server(server_t &serv);
 
   // state machine functions / event processing
   void pop_op();
-  void finish_op(Operation *op);
-  void issue_something(double now = 0.0);
-  void drive_write_machine(double now = 0.0);
+  void finish_op(server_t* serv, Operation *op);
+  void issue_something(server_t* serv, double now = 0.0);
+  void drive_write_machine(server_t* serv, double now = 0.0);
 
   // request functions
-  void issue_get(const char* key, double now = 0.0);
-  void issue_set(const char* key, const char* value, int length,
-                 double now = 0.0);
+  void issue_get(server_t* serv, const char* key, double now = 0.0);
+  void issue_set(server_t* serv, const char* key, const char* value,
+                 int length, double now = 0.0);
 };
 
 #endif
