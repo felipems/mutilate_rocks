@@ -12,8 +12,8 @@ class Connection;
 
 class Protocol {
 public:
-  Protocol(options_t _opts, Connection* _conn, bufferevent* _bev):
-    opts(_opts), conn(_conn), bev(_bev) {};
+  Protocol(options_t _opts, unsigned int _id, Connection* _conn,
+    bufferevent* _bev): opts(_opts), id(_id), conn(_conn), bev(_bev) {};
   virtual ~Protocol() {};
 
   virtual bool setup_connection_w() = 0;
@@ -24,14 +24,15 @@ public:
 
 protected:
   options_t    opts;
+  unsigned int id;
   Connection*  conn;
   bufferevent* bev;
 };
 
 class ProtocolAscii : public Protocol {
 public:
-  ProtocolAscii(options_t opts, Connection* conn, bufferevent* bev):
-    Protocol(opts, conn, bev) { read_state = IDLE; };
+  ProtocolAscii(options_t opts, unsigned int id, Connection* conn,
+    bufferevent* bev): Protocol(opts, id, conn, bev) { read_state = IDLE; };
   ~ProtocolAscii() {};
 
   virtual bool setup_connection_w() { return true; }
@@ -54,8 +55,8 @@ private:
 
 class ProtocolBinary : public Protocol {
 public:
-  ProtocolBinary(options_t opts, Connection* conn, bufferevent* bev):
-    Protocol(opts, conn, bev) {};
+  ProtocolBinary(options_t opts, unsigned int id, Connection* conn,
+    bufferevent* bev): Protocol(opts, id, conn, bev) {};
   ~ProtocolBinary() {};
 
   virtual bool setup_connection_w();
@@ -67,8 +68,8 @@ public:
 
 class ProtocolEtcd : public Protocol {
 public:
-  ProtocolEtcd(options_t opts, Connection* conn, bufferevent* bev):
-    Protocol(opts, conn, bev) { read_state = IDLE; };
+  ProtocolEtcd(options_t opts, unsigned int id, Connection* conn,
+    bufferevent* bev): Protocol(opts, id, conn, bev) { read_state = IDLE; };
   virtual ~ProtocolEtcd() {};
 
   virtual bool setup_connection_w() { return true; }
@@ -91,8 +92,8 @@ protected:
 
 class ProtocolEtcd2 : public ProtocolEtcd {
 public:
-  ProtocolEtcd2(options_t opts, Connection* conn, bufferevent* bev):
-    ProtocolEtcd(opts, conn, bev) {};
+  ProtocolEtcd2(options_t opts, unsigned int id, Connection* conn,
+    bufferevent* bev): ProtocolEtcd(opts, id, conn, bev) {};
   ~ProtocolEtcd2() {};
 
   virtual bool handle_response(evbuffer* input);

@@ -51,8 +51,10 @@ Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
     stats.set_sampler.samples.reserve(options.reserve * options.update + 1);
   }
 
-  read_state  = INIT_READ;
-  write_state = INIT_WRITE;
+  for (auto &s : servers) {
+    s.read_state  = INIT_READ;
+    s.write_state = INIT_WRITE;
+  }
 
   last_tx = last_rx = 0.0;
 
@@ -83,6 +85,16 @@ Connection::~Connection() {
 }
 
 /**
+ * Check that the connection is ready to go.
+ */
+bool Connection::is_ready() {
+  for (auto &s : servers) {
+    if (s.read_state != IDLE) return false;
+  }
+  return true;
+}
+
+/**
  * Connect to the specified server.
  */
 void Connection::connect_server(server_t &serv) {
@@ -94,13 +106,13 @@ void Connection::connect_server(server_t &serv) {
   bufferevent_enable(bev, EV_READ | EV_WRITE);
 
   if (options.etcd2) {
-    prot = new ProtocolEtcd2(options, this, bev);
+    prot = new ProtocolEtcd2(options, serv.id, this, bev);
   } else if (options.etcd) {
-    prot = new ProtocolEtcd(options, this, bev);
+    prot = new ProtocolEtcd(options, serv.id, this, bev);
   } else if (options.binary) {
-    prot = new ProtocolBinary(options, this, bev);
+    prot = new ProtocolBinary(options, serv.id, this, bev);
   } else {
-    prot = new ProtocolAscii(options, this, bev);
+    prot = new ProtocolAscii(options, serv.id, this, bev);
   }
 
   serv.bev  = bev;
@@ -150,16 +162,23 @@ void Connection::set_leader(unsigned int id) {
 }
 
 /**
+ * Return the current leader.
+ */
+unsigned int Connection::get_leader() {
+  return leader->id;
+}
+
+/**
  * Reset the connection back to an initial, fresh state.
  */
 void Connection::reset() {
   // FIXME: Actually check the connection, drain all bufferevents, drain op_q.
   for (auto &s : servers) {
     assert(s.op_queue.size() == 0);
+    s.read_state = IDLE;
+    s.write_state = INIT_WRITE;
   }
   evtimer_del(timer);
-  read_state = IDLE;
-  write_state = INIT_WRITE;
   stats = ConnectionStats(stats.sampling);
 }
 
@@ -178,7 +197,9 @@ void Connection::set_priority(int pri) {
  * Load any required test data onto the server.
  */
 void Connection::start_loading() {
-  read_state = LOADING;
+  for (auto &s : servers) {
+    s.read_state = LOADING;
+  }
   loader_issued = loader_completed = 0;
 
   for (int i = 0; i < LOADER_CHUNK; i++) {
@@ -235,9 +256,9 @@ void Connection::issue_get(server_t* serv, const char* key, double now) {
   op.type = Operation::GET;
   serv->op_queue.push(op);
 
-  if (read_state == IDLE) read_state = WAITING_FOR_GET;
+  if (serv->read_state == IDLE) serv->read_state = WAITING_FOR_GET;
   l = serv->prot->get_request(key);
-  if (read_state != LOADING) stats.tx_bytes += l;
+  if (serv->read_state != LOADING) stats.tx_bytes += l;
 }
 
 /**
@@ -258,9 +279,9 @@ void Connection::issue_set(server_t* serv, const char* key, const char* value,
   op.type = Operation::SET;
   serv->op_queue.push(op);
 
-  if (read_state == IDLE) read_state = WAITING_FOR_SET;
+  if (serv->read_state == IDLE) serv->read_state = WAITING_FOR_SET;
   l = serv->prot->set_request(key, value, length);
-  if (read_state != LOADING) stats.tx_bytes += l;
+  if (serv->read_state != LOADING) stats.tx_bytes += l;
 }
 
 /**
@@ -271,15 +292,15 @@ void Connection::pop_op(server_t* serv) {
 
   serv->op_queue.pop();
 
-  if (read_state == LOADING) return;
-  read_state = IDLE;
+  if (serv->read_state == LOADING) return;
+  serv->read_state = IDLE;
 
   // Advance the read state machine.
   if (serv->op_queue.size() > 0) {
     Operation& op = serv->op_queue.front();
     switch (op.type) {
-    case Operation::GET: read_state = WAITING_FOR_GET; break;
-    case Operation::SET: read_state = WAITING_FOR_SET; break;
+    case Operation::GET: serv->read_state = WAITING_FOR_GET; break;
+    case Operation::SET: serv->read_state = WAITING_FOR_SET; break;
     default: DIE("Not implemented.");
     }
   }
@@ -319,10 +340,18 @@ void Connection::finish_op(server_t* serv, Operation *op) {
  * Check if our testing is done and we should exit.
  */
 bool Connection::check_exit_condition(double now) {
-  if (read_state == INIT_READ) return false;
+  bool connected = true;
+  bool idle = true;
+
+  for (auto &s : servers) {
+    if (s.read_state == INIT_READ) connected = false;
+    if (s.read_state != IDLE) idle = false;
+  }
+
+  if (!connected) return false;
   if (now == 0.0) now = get_time();
   if (now > start_time + options.time) return true;
-  if (options.loadonly && read_state == IDLE) return true;
+  if (options.loadonly && idle) return true;
   return false;
 }
 
@@ -342,9 +371,9 @@ void Connection::event_callback(server_t* serv, short events) {
         DIE("setsockopt()\n");
     }
 
-    read_state = CONN_SETUP;
+    serv->read_state = CONN_SETUP;
     if (serv->prot->setup_connection_w()) {
-      read_state = IDLE;
+      serv->read_state = IDLE;
     }
 
   } else if (events & BEV_EVENT_ERROR) {
@@ -372,25 +401,25 @@ void Connection::drive_write_machine(server_t* serv, double now) {
   if (check_exit_condition(now)) return;
 
   while (1) {
-    switch (write_state) {
+    switch (serv->write_state) {
     case INIT_WRITE:
       delay = iagen->generate();
       next_time = now + delay;
       double_to_tv(delay, &tv);
       evtimer_add(timer, &tv);
-      write_state = WAITING_FOR_TIME;
+      serv->write_state = WAITING_FOR_TIME;
       break;
 
     case ISSUING:
       if (serv->op_queue.size() >= (size_t) options.depth) {
-        write_state = WAITING_FOR_OPQ;
+        serv->write_state = WAITING_FOR_OPQ;
         return;
       } else if (now < next_time) {
-        write_state = WAITING_FOR_TIME;
+        serv->write_state = WAITING_FOR_TIME;
         break; // We want to run through the state machine one more time
                // to make sure the timer is armed.
       } else if (options.moderate && now < last_rx + 0.00025) {
-        write_state = WAITING_FOR_TIME;
+        serv->write_state = WAITING_FOR_TIME;
         if (!event_pending(timer, EV_TIMEOUT, NULL)) {
           delay = last_rx + 0.00025 - now;
           double_to_tv(delay, &tv);
@@ -424,12 +453,12 @@ void Connection::drive_write_machine(server_t* serv, double now) {
         }
         return;
       }
-      write_state = ISSUING;
+      serv->write_state = ISSUING;
       break;
 
     case WAITING_FOR_OPQ:
       if (serv->op_queue.size() >= (size_t) options.depth) return;
-      write_state = ISSUING;
+      serv->write_state = ISSUING;
       break;
 
     default: DIE("Not implemented");
@@ -450,10 +479,11 @@ void Connection::read_callback(server_t* serv) {
     if (serv->op_queue.size() > 0) {
       op = &serv->op_queue.front();
     } else {
+      // since we're in a loop, may need to escape if out of op's to process
       return;
     }
 
-    switch (read_state) {
+    switch (serv->read_state) {
     case INIT_READ: DIE("event from uninitialized connection");
     case IDLE: return;  // We munched all the data we expected?
 
@@ -472,7 +502,9 @@ void Connection::read_callback(server_t* serv) {
 
       if (loader_completed == options.records) {
         D("Finished loading.");
-        read_state = IDLE;
+        for (auto &s : servers) {
+          s.read_state = IDLE;
+        }
       } else {
         while (loader_issued < loader_completed + LOADER_CHUNK) {
           if (loader_issued >= options.records) break;
@@ -491,7 +523,7 @@ void Connection::read_callback(server_t* serv) {
     case CONN_SETUP:
       assert(options.binary);
       if (!serv->prot->setup_connection_r(input)) return;
-      read_state = IDLE;
+      serv->read_state = IDLE;
       break;
 
     default: DIE("not implemented");

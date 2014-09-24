@@ -25,14 +25,34 @@ using namespace std;
 class Connection;
 class Protocol;
 
+enum read_state_enum {
+  INIT_READ,
+  CONN_SETUP,
+  LOADING,
+  IDLE,
+  WAITING_FOR_GET,
+  WAITING_FOR_SET,
+  MAX_READ_STATE,
+};
+
+enum write_state_enum {
+  INIT_WRITE,
+  ISSUING,
+  WAITING_FOR_TIME,
+  WAITING_FOR_OPQ,
+  MAX_WRITE_STATE,
+};
+
 typedef struct {
-    int                   id;
+    unsigned int          id;
     string                host;
     string                port;
     Connection*           conn;
     Protocol*             prot;
     struct bufferevent*   bev;
     std::queue<Operation> op_queue;
+    read_state_enum       read_state;
+    write_state_enum      write_state;
 } server_t;
 
 void bev_event_cb(struct bufferevent *bev, short events, void *ptr);
@@ -50,9 +70,10 @@ public:
   ConnectionStats stats;
   options_t options;
 
-  bool is_ready() { return read_state == IDLE; }
+  bool is_ready();
   void set_priority(int pri);
   void set_leader(unsigned int id);
+  unsigned int get_leader();
 
   // state commands
   void start() { drive_write_machine(leader); }
@@ -77,27 +98,6 @@ private:
   double next_time;    // Inter-transmission time parameters.
   double last_rx;      // Used to moderate transmission rate.
   double last_tx;
-
-  enum read_state_enum {
-    INIT_READ,
-    CONN_SETUP,
-    LOADING,
-    IDLE,
-    WAITING_FOR_GET,
-    WAITING_FOR_SET,
-    MAX_READ_STATE,
-  };
-
-  enum write_state_enum {
-    INIT_WRITE,
-    ISSUING,
-    WAITING_FOR_TIME,
-    WAITING_FOR_OPQ,
-    MAX_WRITE_STATE,
-  };
-
-  read_state_enum read_state;
-  write_state_enum write_state;
 
   // Parameters to track progress of the data loader.
   int loader_issued, loader_completed;

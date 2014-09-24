@@ -336,7 +336,6 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
       return true;
 
     case LEADER_CHANGED:
-      printf("Leader changed... ");
       ptr = evbuffer_search(input, "X-Etcd-Leader: ", 15, NULL);
       if (ptr.pos < 0) {
         conn->stats.rx_bytes += evbuffer_get_length(input) - 14;
@@ -347,8 +346,12 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
       evbuffer_drain(input, ptr.pos + 15);
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       sscanf(buf, "%d", &new_leader);
-      printf("%d\n", new_leader);
-      conn->set_leader(new_leader);
+      // only change leader if we are the leader, otherwise our info may be
+      // old...
+      if (id == conn->get_leader()) {
+        printf("%d\n", new_leader);
+        conn->set_leader(new_leader);
+      }
       read_state = WAITING_FOR_HTTP_BODY;
       break;
 
