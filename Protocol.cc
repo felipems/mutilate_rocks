@@ -364,3 +364,88 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
   DIE("Shouldn't ever reach here...");
 }
 
+/* HTTP GET Request */
+static const char* http_get_req = "GET /%s HTTP/1.1\r\n\r\n";
+static const char* http_set_req = "POST /%s HTTP/1.1\r\nContent-Length: %d\r\n";
+
+/* Perform a get request against a HTTP server */
+int ProtocolHttp::get_request(const char* key) {
+  int l;
+  l = evbuffer_add_printf(bufferevent_get_output(bev), http_get_req, key);
+  if (read_state == IDLE) read_state = WAITING_FOR_HTTP;
+  return l;
+}
+
+/* Perform a set request against a HTTP server */
+int ProtocolHttp::set_request(const char* key, const char* value, int len) {
+  int l;
+  l = evbuffer_add_printf(bufferevent_get_output(bev),
+                          http_set_req, key, len + 6);
+  bufferevent_write(
+    bev, "Content-Type: application/x-www-form-urlencoded\r\n\r\nvalue=", 57);
+  bufferevent_write(bev, value, len);
+  l += len + 57;
+  if (read_state == IDLE) read_state = WAITING_FOR_HTTP;
+  return l;
+}
+
+/* Handle a response from a HTTP server */
+bool ProtocolHttp::handle_response(evbuffer* input, bool& switched) {
+  char *buf = NULL;
+  struct evbuffer_ptr ptr;
+  static size_t n_read_out;
+
+  while (1) {
+    switch (read_state) {
+
+    case WAITING_FOR_HTTP:
+      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+      if (buf == NULL) return false;
+
+      conn->stats.rx_bytes += n_read_out + 2;
+
+      if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
+        conn->stats.get_misses++;
+      } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
+        // nothing...
+      } else {
+        DIE("Unknown HTTP response: %s\n", buf);
+      }
+      free(buf);
+      read_state = WAITING_FOR_HTTP_LEN;
+
+    case WAITING_FOR_HTTP_LEN:
+      #define LEN 15
+      ptr = evbuffer_search(input, "Content-Length:", LEN, NULL);
+      if (ptr.pos < 0) {
+        conn->stats.rx_bytes += evbuffer_get_length(input) - LEN + 1;
+        evbuffer_drain(input, evbuffer_get_length(input) - LEN + 1);
+        return false;
+      }
+      conn->stats.rx_bytes += ptr.pos + LEN;
+      evbuffer_drain(input, ptr.pos + LEN);
+      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
+      sscanf(buf, "%ld", &n_read_out);
+      read_state = WAITING_FOR_HTTP_BODY;
+      #undef LEN
+
+    case WAITING_FOR_HTTP_BODY:
+      #define LEN 4
+      ptr = evbuffer_search(input, "\r\n\r\n", LEN, NULL);
+      if (ptr.pos < 0) {
+        conn->stats.rx_bytes += evbuffer_get_length(input) - LEN + 1;
+        evbuffer_drain(input, evbuffer_get_length(input) - LEN + 1);
+        return false;
+      }
+      conn->stats.rx_bytes += ptr.pos + LEN;
+      evbuffer_drain(input, ptr.pos + LEN + n_read_out);
+      read_state = WAITING_FOR_HTTP;
+      #undef LEN
+      return true;
+
+    default: printf("state: %d\n", read_state); DIE("Unimplemented!");
+    }
+  }
+
+  DIE("Shouldn't ever reach here...");
+}

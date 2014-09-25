@@ -99,4 +99,29 @@ public:
   virtual bool handle_response(evbuffer* input, bool& switched);
 };
 
+class ProtocolHttp : public Protocol {
+public:
+  ProtocolHttp(options_t opts, unsigned int id, Connection* conn,
+    bufferevent* bev): Protocol(opts, id, conn, bev) { read_state = IDLE; };
+  virtual ~ProtocolHttp() {};
+
+  virtual bool setup_connection_w() { return true; }
+  virtual bool setup_connection_r(evbuffer* input) { return true; }
+  virtual int  get_request(const char* key);
+  virtual int  set_request(const char* key, const char* value, int len);
+  virtual bool handle_response(evbuffer* input, bool& switched);
+
+protected:
+  enum read_fsm {
+    IDLE,
+    WAITING_FOR_HTTP,
+    WAITING_FOR_HTTP_LEN,
+    WAITING_FOR_HTTP_BODY,
+  };
+
+  read_fsm read_state;
+  int data_length;
+};
+
+
 #endif

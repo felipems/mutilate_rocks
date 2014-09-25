@@ -536,6 +536,8 @@ int main(int argc, char **argv) {
           fprintf(arch, " [linear]");
         }
         fprintf(arch, "\n");
+      } else if (options.http) {
+        fprintf(arch, "Protocol: http\n");
       } else if (options.binary) {
         fprintf(arch, "Protocol: binary\n");
       } else {
@@ -1033,6 +1035,7 @@ void args_to_options(options_t* options) {
 
   options->etcd = args.etcd_given;
   options->etcd2 = args.etcd2_given;
+  options->http = args.http_given;
   options->binary = args.binary_given;
   options->sasl = args.username_given;
   options->linear = args.linear_given;

@@ -12,6 +12,7 @@ typedef struct {
 
   bool etcd;
   bool etcd2;
+  bool http;
   bool binary;
   bool sasl;
   char username[32];

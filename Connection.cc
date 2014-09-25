@@ -109,6 +109,8 @@ void Connection::connect_server(server_t &serv) {
     prot = new ProtocolEtcd2(options, serv.id, this, bev);
   } else if (options.etcd) {
     prot = new ProtocolEtcd(options, serv.id, this, bev);
+  } else if (options.http) {
+    prot = new ProtocolHttp(options, serv.id, this, bev);
   } else if (options.binary) {
     prot = new ProtocolBinary(options, serv.id, this, bev);
   } else {
