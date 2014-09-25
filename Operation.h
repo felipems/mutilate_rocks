@@ -9,7 +9,8 @@ using namespace std;
 class Operation {
 public:
   enum type_enum {
-    GET, SET
+    GET, GETW,
+    SET, SETW
   };
 
   type_enum type;
@@ -23,9 +24,11 @@ public:
 
   const char* toString() {
     switch(type) {
-    case GET:  return "GET";
-    case SET:  return "SET";
-    default:   return "?";
+    case GET:   return "GET";
+    case GETW:  return "GETW";
+    case SET:   return "SET";
+    case SETW:  return "SETW";
+    default:    return "?";
     }
   }
 };

@@ -310,7 +310,7 @@ void Connection::pop_op(server_t* serv) {
  * Finish up (record stats) an operation that just returned from the
  * server.
  */
-void Connection::finish_op(server_t* serv, Operation *op) {
+void Connection::finish_op(server_t* serv, Operation *op, bool switched) {
   double now;
 #if USE_CACHED_TIME
   struct timeval now_tv;
@@ -326,8 +326,14 @@ void Connection::finish_op(server_t* serv, Operation *op) {
 #endif
 
   switch (op->type) {
-  case Operation::GET: stats.log_get(*op); break;
-  case Operation::SET: stats.log_set(*op); break;
+  case Operation::GET:
+    if (switched) op->type = Operation::GETW;
+    stats.log_get(*op);
+    break;
+  case Operation::SET:
+    if (switched) op->type = Operation::SETW;
+    stats.log_set(*op);
+    break;
   default: DIE("Not implemented.");
   }
 
@@ -472,6 +478,7 @@ void Connection::drive_write_machine(server_t* serv, double now) {
 void Connection::read_callback(server_t* serv) {
   struct evbuffer *input = bufferevent_get_input(serv->bev);
   Operation *op = NULL;
+  bool switched;
 
   if (serv->op_queue.size() == 0) V("Spurious read callback.");
 
@@ -483,6 +490,7 @@ void Connection::read_callback(server_t* serv) {
       return;
     }
 
+    switched = false;
     switch (serv->read_state) {
     case INIT_READ: DIE("event from uninitialized connection");
     case IDLE: return;  // We munched all the data we expected?
@@ -490,13 +498,13 @@ void Connection::read_callback(server_t* serv) {
     case WAITING_FOR_GET:
     case WAITING_FOR_SET:
       assert(serv->op_queue.size() > 0);
-      if (!serv->prot->handle_response(input)) return;
-      finish_op(serv, op); // sets read_state = IDLE
+      if (!serv->prot->handle_response(input, switched)) return;
+      finish_op(serv, op, switched); // sets read_state = IDLE
       break;
 
     case LOADING:
       assert(serv->op_queue.size() > 0);
-      if (!serv->prot->handle_response(input)) return;
+      if (!serv->prot->handle_response(input, switched)) return;
       loader_completed++;
       pop_op(serv);
 

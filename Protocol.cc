@@ -47,7 +47,7 @@ int ProtocolAscii::set_request(const char* key, const char* value, int len) {
 /**
  * Handle an ascii response.
  */
-bool ProtocolAscii::handle_response(evbuffer *input) {
+bool ProtocolAscii::handle_response(evbuffer *input, bool& switched) {
   char *buf = NULL;
   int len;
   size_t n_read_out;
@@ -126,7 +126,8 @@ bool ProtocolBinary::setup_connection_w() {
  */
 bool ProtocolBinary::setup_connection_r(evbuffer* input) {
   if (!opts.sasl) return true;
-  return handle_response(input);
+  bool b;
+  return handle_response(input, b);
 }
 
 /**
@@ -168,7 +169,7 @@ int ProtocolBinary::set_request(const char* key, const char* value, int len) {
  * @param input evBuffer to read response from
  * @return  true if consumed, false if not enough data in buffer.
  */
-bool ProtocolBinary::handle_response(evbuffer *input) {
+bool ProtocolBinary::handle_response(evbuffer *input, bool& switched) {
   // Read the first 24 bytes as a header
   int length = evbuffer_get_length(input);
   if (length < 24) return false;
@@ -232,7 +233,7 @@ int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
 }
 
 /* Handle a response from etcd 0.4.6 */
-bool ProtocolEtcd::handle_response(evbuffer* input) {
+bool ProtocolEtcd::handle_response(evbuffer* input, bool& switched) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
@@ -278,7 +279,7 @@ bool ProtocolEtcd::handle_response(evbuffer* input) {
 }
 
 /* Handle a response from etcd HEAD */
-bool ProtocolEtcd2::handle_response(evbuffer* input) {
+bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
@@ -353,6 +354,7 @@ bool ProtocolEtcd2::handle_response(evbuffer* input) {
         conn->set_leader(new_leader);
       }
       read_state = WAITING_FOR_HTTP_BODY;
+      switched = true;
       break;
 
     default: printf("state: %d\n", read_state); DIE("Unimplemented!");

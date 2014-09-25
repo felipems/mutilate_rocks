@@ -113,7 +113,7 @@ private:
 
   // state machine functions / event processing
   void pop_op(server_t* serv);
-  void finish_op(server_t* serv, Operation *op);
+  void finish_op(server_t* serv, Operation *op, bool switched);
   void issue_something(server_t* serv, double now = 0.0);
   void drive_write_machine(server_t* serv, double now = 0.0);
 
