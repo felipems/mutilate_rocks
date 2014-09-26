@@ -4,16 +4,15 @@
 
 #include <event2/bufferevent.h>
 
+#include "Connection.h"
 #include "ConnectionOptions.h"
 
 using namespace std;
 
-class Connection;
-
 class Protocol {
 public:
-  Protocol(options_t _opts, unsigned int _id, Connection* _conn,
-    bufferevent* _bev): opts(_opts), id(_id), conn(_conn), bev(_bev) {};
+  Protocol(options_t _opts, server_t& _serv, bufferevent* _bev):
+    opts(_opts), serv(_serv), bev(_bev), stats(_serv.conn->stats) {};
   virtual ~Protocol() {};
 
   virtual bool setup_connection_w() = 0;
@@ -23,16 +22,16 @@ public:
   virtual bool handle_response(evbuffer* input, bool& switched) = 0;
 
 protected:
-  options_t    opts;
-  unsigned int id;
-  Connection*  conn;
-  bufferevent* bev;
+  options_t       opts;
+  server_t&       serv;
+  bufferevent*    bev;
+  ConnectionStats stats;
 };
 
 class ProtocolAscii : public Protocol {
 public:
-  ProtocolAscii(options_t opts, unsigned int id, Connection* conn,
-    bufferevent* bev): Protocol(opts, id, conn, bev) { read_state = IDLE; };
+  ProtocolAscii(options_t opts, server_t& serv, bufferevent* bev):
+    Protocol(opts, serv, bev) { read_state = IDLE; };
   ~ProtocolAscii() {};
 
   virtual bool setup_connection_w() { return true; }
@@ -55,8 +54,8 @@ private:
 
 class ProtocolBinary : public Protocol {
 public:
-  ProtocolBinary(options_t opts, unsigned int id, Connection* conn,
-    bufferevent* bev): Protocol(opts, id, conn, bev) {};
+  ProtocolBinary(options_t opts, server_t& serv, bufferevent* bev):
+    Protocol(opts, serv, bev) {};
   ~ProtocolBinary() {};
 
   virtual bool setup_connection_w();
@@ -68,8 +67,8 @@ public:
 
 class ProtocolEtcd : public Protocol {
 public:
-  ProtocolEtcd(options_t opts, unsigned int id, Connection* conn,
-    bufferevent* bev): Protocol(opts, id, conn, bev) { read_state = IDLE; };
+  ProtocolEtcd(options_t opts, server_t& serv, bufferevent* bev):
+    Protocol(opts, serv, bev) { read_state = IDLE; };
   virtual ~ProtocolEtcd() {};
 
   virtual bool setup_connection_w() { return true; }
@@ -92,8 +91,8 @@ protected:
 
 class ProtocolEtcd2 : public ProtocolEtcd {
 public:
-  ProtocolEtcd2(options_t opts, unsigned int id, Connection* conn,
-    bufferevent* bev): ProtocolEtcd(opts, id, conn, bev) {};
+  ProtocolEtcd2(options_t opts, server_t& serv, bufferevent* bev):
+    ProtocolEtcd(opts, serv, bev) {};
   ~ProtocolEtcd2() {};
 
   virtual bool handle_response(evbuffer* input, bool& switched);
@@ -101,8 +100,8 @@ public:
 
 class ProtocolHttp : public Protocol {
 public:
-  ProtocolHttp(options_t opts, unsigned int id, Connection* conn,
-    bufferevent* bev): Protocol(opts, id, conn, bev) { read_state = IDLE; };
+  ProtocolHttp(options_t opts, server_t& serv, bufferevent* bev):
+    Protocol(opts, serv, bev) { read_state = IDLE; };
   virtual ~ProtocolHttp() {};
 
   virtual bool setup_connection_w() { return true; }
@@ -122,6 +121,5 @@ protected:
   read_fsm read_state;
   int data_length;
 };
-
 
 #endif

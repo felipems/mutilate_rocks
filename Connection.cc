@@ -14,6 +14,8 @@
 #include "config.h"
 
 #include "Connection.h"
+#include "Protocol.h"
+
 #include "distributions.h"
 #include "Generator.h"
 #include "mutilate.h"
@@ -106,15 +108,15 @@ void Connection::connect_server(server_t &serv) {
   bufferevent_enable(bev, EV_READ | EV_WRITE);
 
   if (options.etcd2) {
-    prot = new ProtocolEtcd2(options, serv.id, this, bev);
+    prot = new ProtocolEtcd2(options, serv, bev);
   } else if (options.etcd) {
-    prot = new ProtocolEtcd(options, serv.id, this, bev);
+    prot = new ProtocolEtcd(options, serv, bev);
   } else if (options.http) {
-    prot = new ProtocolHttp(options, serv.id, this, bev);
+    prot = new ProtocolHttp(options, serv, bev);
   } else if (options.binary) {
-    prot = new ProtocolBinary(options, serv.id, this, bev);
+    prot = new ProtocolBinary(options, serv, bev);
   } else {
-    prot = new ProtocolAscii(options, serv.id, this, bev);
+    prot = new ProtocolAscii(options, serv, bev);
   }
 
   serv.bev  = bev;
@@ -538,6 +540,17 @@ void Connection::read_callback(server_t* serv) {
 
     default: DIE("not implemented");
     }
+  }
+}
+
+/**
+ * Prints out the state of the connection in regards to loading data.
+ */
+void Connection::print_load_state() {
+  printf("Loads Required: %d, Complete: %d, Issued: %d\n",
+    options.records, loader_completed, loader_issued);
+  for (auto &s : servers) {
+    printf("Server: %d, Queue: %zu\n", s.id, s.op_queue.size());
   }
 }
 

@@ -9,8 +9,8 @@
 
 #include "config.h"
 
-#include "Protocol.h"
 #include "Connection.h"
+#include "Protocol.h"
 #include "distributions.h"
 #include "Generator.h"
 #include "mutilate.h"
@@ -60,10 +60,10 @@ bool ProtocolAscii::handle_response(evbuffer *input, bool& switched) {
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       if (buf == NULL) return false;
 
-      conn->stats.rx_bytes += n_read_out + 2;
+      stats.rx_bytes += n_read_out + 2;
 
       if (!strncmp(buf, "END", 3)) {
-        if (read_state == WAITING_FOR_GET) conn->stats.get_misses++;
+        if (read_state == WAITING_FOR_GET) stats.get_misses++;
         read_state = WAITING_FOR_GET;
         free(buf);
         return true;
@@ -90,7 +90,7 @@ bool ProtocolAscii::handle_response(evbuffer *input, bool& switched) {
       if (len < data_length + 2) return false;
       evbuffer_drain(input, data_length + 2);
       read_state = WAITING_FOR_END;
-      conn->stats.rx_bytes += data_length + 2;
+      stats.rx_bytes += data_length + 2;
       break;
 
     default: printf("state: %d\n", read_state); DIE("Unimplemented!");
@@ -183,7 +183,7 @@ bool ProtocolBinary::handle_response(evbuffer *input, bool& switched) {
 
   // If something other than success, count it as a miss
   if (h->opcode == CMD_GET && h->status) {
-      conn->stats.get_misses++;
+      stats.get_misses++;
   }
 
   if (unlikely(h->opcode == CMD_SASL)) {
@@ -195,7 +195,7 @@ bool ProtocolBinary::handle_response(evbuffer *input, bool& switched) {
   }
 
   evbuffer_drain(input, targetLen);
-  conn->stats.rx_bytes += targetLen;
+  stats.rx_bytes += targetLen;
   return true;
 }
 
@@ -245,10 +245,10 @@ bool ProtocolEtcd::handle_response(evbuffer* input, bool& switched) {
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       if (buf == NULL) return false;
 
-      conn->stats.rx_bytes += n_read_out + 2;
+      stats.rx_bytes += n_read_out + 2;
 
       if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
-        conn->stats.get_misses++;
+        stats.get_misses++;
       } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
         // nothing...
       } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
@@ -262,11 +262,11 @@ bool ProtocolEtcd::handle_response(evbuffer* input, bool& switched) {
     case WAITING_FOR_HTTP_BODY:
       ptr = evbuffer_search(input, "}\r\n0\r\n\r\n", 8, NULL);
       if (ptr.pos < 0) {
-        conn->stats.rx_bytes += evbuffer_get_length(input) - 7;
+        stats.rx_bytes += evbuffer_get_length(input) - 7;
         evbuffer_drain(input, evbuffer_get_length(input) - 7);
         return false;
       }
-      conn->stats.rx_bytes += ptr.pos + 8;
+      stats.rx_bytes += ptr.pos + 8;
       evbuffer_drain(input, ptr.pos + 8);
       read_state = WAITING_FOR_HTTP;
       return true;
@@ -295,10 +295,10 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       if (buf == NULL) return false;
 
-      conn->stats.rx_bytes += n_read_out + 2;
+      stats.rx_bytes += n_read_out + 2;
 
       if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
-        conn->stats.get_misses++;
+        stats.get_misses++;
       } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
         // nothing...
       } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
@@ -306,32 +306,49 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
       } else if (!strncmp(buf, "HTTP/1.1 424 status code 424", n_read_out)) {
         // 404 -- where leader has moved.
         leader_changed = true;
-        conn->stats.get_misses++;
+        stats.get_misses++;
       } else if (!strncmp(buf, "HTTP/1.1 422 status code 422", n_read_out)) {
         // 200 -- where leader has moved.
         leader_changed = true;
       } else if (!strncmp(buf, "HTTP/1.1 423 status code 423", n_read_out)) {
         // 201 created -- where leader has moved.
         leader_changed = true;
+      } else if (!strncmp(buf, "HTTP/1.1 500 Internal Server Error", n_read_out)) {
+        Operation& op = serv.op_queue.front();
+#if USE_CACHED_TIME
+        struct timeval now_tv;
+        event_base_gettimeofday_cached(base, &now_tv);
+        op.end_time = tv_to_double(&now_tv);
+#elif HAVE_CLOCK_GETTIME
+        op.end_time = get_time_accurate();
+#else
+        op.end_time = get_time();
+#endif
+        printf("Internal Server Error! (Op time: %fus)\n", op.time() / 1000);
+        printf("Server: %d, Leader: %d\n", serv.id, serv.conn->get_leader());
+        serv.conn->print_load_state();
+        DIE("Unknown HTTP response: %s\n", buf);
       } else {
         DIE("Unknown HTTP response: %s\n", buf);
       }
       free(buf);
+
       if (leader_changed) {
         read_state = LEADER_CHANGED;
         break;
       } else {
         read_state = WAITING_FOR_HTTP_BODY;
+        // fallthrough
       }
 
     case WAITING_FOR_HTTP_BODY:
       ptr = evbuffer_search(input, "}\n", 2, NULL);
       if (ptr.pos < 0) {
-        conn->stats.rx_bytes += evbuffer_get_length(input) - 1;
+        stats.rx_bytes += evbuffer_get_length(input) - 1;
         evbuffer_drain(input, evbuffer_get_length(input) - 1);
         return false;
       }
-      conn->stats.rx_bytes += ptr.pos + 2;
+      stats.rx_bytes += ptr.pos + 2;
       evbuffer_drain(input, ptr.pos + 2);
       read_state = WAITING_FOR_HTTP;
       return true;
@@ -339,19 +356,19 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
     case LEADER_CHANGED:
       ptr = evbuffer_search(input, "X-Etcd-Leader: ", 15, NULL);
       if (ptr.pos < 0) {
-        conn->stats.rx_bytes += evbuffer_get_length(input) - 14;
+        stats.rx_bytes += evbuffer_get_length(input) - 14;
         evbuffer_drain(input, evbuffer_get_length(input) - 14);
         return false;
       }
-      conn->stats.rx_bytes += ptr.pos + 15;
+      stats.rx_bytes += ptr.pos + 15;
       evbuffer_drain(input, ptr.pos + 15);
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       sscanf(buf, "%d", &new_leader);
       // only change leader if we are the leader, otherwise our info may be
       // old...
-      if (id == conn->get_leader()) {
+      if (serv.id == serv.conn->get_leader()) {
         printf("%d\n", new_leader);
-        conn->set_leader(new_leader);
+        serv.conn->set_leader(new_leader);
       }
       read_state = WAITING_FOR_HTTP_BODY;
       switched = true;
@@ -402,10 +419,10 @@ bool ProtocolHttp::handle_response(evbuffer* input, bool& switched) {
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       if (buf == NULL) return false;
 
-      conn->stats.rx_bytes += n_read_out + 2;
+      stats.rx_bytes += n_read_out + 2;
 
       if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
-        conn->stats.get_misses++;
+        stats.get_misses++;
       } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
         // nothing...
       } else {
@@ -418,11 +435,11 @@ bool ProtocolHttp::handle_response(evbuffer* input, bool& switched) {
       #define LEN 15
       ptr = evbuffer_search(input, "Content-Length:", LEN, NULL);
       if (ptr.pos < 0) {
-        conn->stats.rx_bytes += evbuffer_get_length(input) - LEN + 1;
+        stats.rx_bytes += evbuffer_get_length(input) - LEN + 1;
         evbuffer_drain(input, evbuffer_get_length(input) - LEN + 1);
         return false;
       }
-      conn->stats.rx_bytes += ptr.pos + LEN;
+      stats.rx_bytes += ptr.pos + LEN;
       evbuffer_drain(input, ptr.pos + LEN);
       buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
       sscanf(buf, "%ld", &n_read_out);
@@ -433,11 +450,11 @@ bool ProtocolHttp::handle_response(evbuffer* input, bool& switched) {
       #define LEN 4
       ptr = evbuffer_search(input, "\r\n\r\n", LEN, NULL);
       if (ptr.pos < 0) {
-        conn->stats.rx_bytes += evbuffer_get_length(input) - LEN + 1;
+        stats.rx_bytes += evbuffer_get_length(input) - LEN + 1;
         evbuffer_drain(input, evbuffer_get_length(input) - LEN + 1);
         return false;
       }
-      conn->stats.rx_bytes += ptr.pos + LEN;
+      stats.rx_bytes += ptr.pos + LEN;
       evbuffer_drain(input, ptr.pos + LEN + n_read_out);
       read_state = WAITING_FOR_HTTP;
       #undef LEN

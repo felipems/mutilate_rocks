@@ -18,8 +18,6 @@
 #include "Operation.h"
 #include "util.h"
 
-#include "Protocol.h"
-
 using namespace std;
 
 class Connection;
@@ -80,6 +78,7 @@ public:
   void start_loading();
   void reset();
   bool check_exit_condition(double now = 0.0);
+  void print_load_state();
 
   // event callbacks
   void event_callback(server_t* serv, short events);
