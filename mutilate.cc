@@ -600,8 +600,13 @@ int main(int argc, char **argv) {
     fprintf(arch, "TX %10" PRIu64 " bytes : %6.1f MB/s\n",
             stats.tx_bytes,
             (double) stats.tx_bytes / 1024 / 1024 / (stats.stop - stats.start));
-    fprintf(arch, "Start Time: %f\n", stats.start);
-    fprintf(arch, "Stop  Time: %f\n", stats.stop);
+
+    char buf[64];
+    double_tv_to_string(stats.start, buf, sizeof buf);
+    fprintf(arch, "Start Time: %s (%f)\n", buf, stats.start);
+
+    double_tv_to_string(stats.stop, buf, sizeof buf);
+    fprintf(arch, "Stop  Time: %s (%f)\n", buf, stats.stop);
 
     if (args.archive_given || args.save_given) {
       stats.get_sampler.accumulate(stats.set_sampler);

@@ -19,6 +19,20 @@ inline void double_to_tv(double val, struct timeval *tv) {
   tv->tv_usec = usecs;
 }
 
+inline void double_tv_to_string(double val, char* buf, size_t n) {
+  char tmpbuf[64];
+  struct timeval tv;
+  time_t nowtime;
+  struct tm* nowtm;
+
+  double_to_tv(val, &tv);
+  nowtime = tv.tv_sec;
+  nowtm = localtime(&nowtime);
+  
+  strftime(tmpbuf, sizeof tmpbuf, "%Y/%m/%d %H:%M:%S", nowtm);
+  snprintf(buf, n, "%s.%06ld", tmpbuf, tv.tv_usec);
+}
+
 inline double get_time_accurate() {
 #if USE_CLOCK_GETTIME
   struct timespec ts;
