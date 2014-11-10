@@ -616,8 +616,14 @@ int main(int argc, char **argv) {
       fprintf(arch, "\n======================================\n\n");
       for (auto i: stats.get_sampler.samples) {
         double_tv_to_string(i.start_time, buf, sizeof buf);
-        fprintf(arch, "%s (%f) %f %s %f\n", buf, i.start_time,
-          i.start_time - boot_time, i.toString(), i.time());
+        if (i.type == Operation::GETW || i.type == Operation::SETW) {
+          fprintf(arch, "%s (%f) %f %s %f [#: %d, time: %f]\n", buf,
+            i.start_time, i.start_time - boot_time, i.toString(), i.time(),
+            i.switched, i.switchCost());
+        } else {
+          fprintf(arch, "%s (%f) %f %s %f\n", buf, i.start_time,
+            i.start_time - boot_time, i.toString(), i.time());
+        }
       }
     }
     fclose(arch);

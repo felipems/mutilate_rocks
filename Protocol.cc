@@ -47,7 +47,7 @@ int ProtocolAscii::set_request(const char* key, const char* value, int len) {
 /**
  * Handle an ascii response.
  */
-bool ProtocolAscii::handle_response(evbuffer *input, bool& switched) {
+bool ProtocolAscii::handle_response(evbuffer *input, Operation* op) {
   char *buf = NULL;
   int len;
   size_t n_read_out;
@@ -126,8 +126,8 @@ bool ProtocolBinary::setup_connection_w() {
  */
 bool ProtocolBinary::setup_connection_r(evbuffer* input) {
   if (!opts.sasl) return true;
-  bool b;
-  return handle_response(input, b);
+  Operation o;
+  return handle_response(input, &o);
 }
 
 /**
@@ -169,7 +169,7 @@ int ProtocolBinary::set_request(const char* key, const char* value, int len) {
  * @param input evBuffer to read response from
  * @return  true if consumed, false if not enough data in buffer.
  */
-bool ProtocolBinary::handle_response(evbuffer *input, bool& switched) {
+bool ProtocolBinary::handle_response(evbuffer *input, Operation* op) {
   // Read the first 24 bytes as a header
   int length = evbuffer_get_length(input);
   if (length < 24) return false;
@@ -233,7 +233,7 @@ int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
 }
 
 /* Handle a response from etcd 0.4.6 */
-bool ProtocolEtcd::handle_response(evbuffer* input, bool& switched) {
+bool ProtocolEtcd::handle_response(evbuffer* input, Operation* op) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
@@ -279,7 +279,7 @@ bool ProtocolEtcd::handle_response(evbuffer* input, bool& switched) {
 }
 
 /* Handle a response from etcd HEAD */
-bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
+bool ProtocolEtcd2::handle_response(evbuffer* input, Operation* op) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
@@ -314,17 +314,16 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
         // 201 created -- where leader has moved.
         leader_changed = true;
       } else if (!strncmp(buf, "HTTP/1.1 500 Internal Server Error", n_read_out)) {
-        Operation& op = serv.op_queue.front();
 #if USE_CACHED_TIME
         struct timeval now_tv;
         event_base_gettimeofday_cached(base, &now_tv);
-        op.end_time = tv_to_double(&now_tv);
+        op->end_time = tv_to_double(&now_tv);
 #elif HAVE_CLOCK_GETTIME
-        op.end_time = get_time_accurate();
+        op->end_time = get_time_accurate();
 #else
-        op.end_time = get_time();
+        op->end_time = get_time();
 #endif
-        printf("Internal Server Error! (Op time: %fus)\n", op.time() / 1000);
+        printf("Internal Server Error! (Op time: %fus)\n", op->time() / 1000);
         printf("Server: %d, Leader: %d\n", serv.id, serv.conn->get_leader());
         serv.conn->print_load_state();
         DIE("Unknown HTTP response: %s\n", buf);
@@ -371,7 +370,16 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, bool& switched) {
         serv.conn->set_leader(new_leader);
       }
       read_state = WAITING_FOR_HTTP_BODY;
-      switched = true;
+      op->switched++;
+#if USE_CACHED_TIME
+      struct timeval now_tv;
+      event_base_gettimeofday_cached(base, &now_tv);
+      op->switch_time = tv_to_double(&now_tv);
+#elif HAVE_CLOCK_GETTIME
+      op->switch_time = get_time_accurate();
+#else
+      op->switch_time = get_time();
+#endif
       break;
 
     default: printf("state: %d\n", read_state); DIE("Unimplemented!");
@@ -407,7 +415,7 @@ int ProtocolHttp::set_request(const char* key, const char* value, int len) {
 }
 
 /* Handle a response from a HTTP server */
-bool ProtocolHttp::handle_response(evbuffer* input, bool& switched) {
+bool ProtocolHttp::handle_response(evbuffer* input, Operation* op) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   static size_t n_read_out;
