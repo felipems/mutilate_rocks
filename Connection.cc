@@ -107,9 +107,7 @@ void Connection::connect_server(server_t &serv) {
   bufferevent_setcb(bev, bev_read_cb, bev_write_cb, bev_event_cb, &serv);
   bufferevent_enable(bev, EV_READ | EV_WRITE);
 
-  if (options.etcd2) {
-    prot = new ProtocolEtcd2(options, serv, bev);
-  } else if (options.etcd) {
+  if (options.etcd) {
     prot = new ProtocolEtcd(options, serv, bev);
   } else if (options.http) {
     prot = new ProtocolHttp(options, serv, bev);

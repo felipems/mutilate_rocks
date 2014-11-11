@@ -90,15 +90,6 @@ protected:
   int data_length;
 };
 
-class ProtocolEtcd2 : public ProtocolEtcd {
-public:
-  ProtocolEtcd2(options_t opts, server_t& serv, bufferevent* bev):
-    ProtocolEtcd(opts, serv, bev) {};
-  ~ProtocolEtcd2() {};
-
-  virtual bool handle_response(evbuffer* input, Operation* op);
-};
-
 class ProtocolHttp : public Protocol {
 public:
   ProtocolHttp(options_t opts, server_t& serv, bufferevent* bev):

@@ -205,7 +205,7 @@ static const char* get_req = "GET /v2/keys/test/%s HTTP/1.1\r\n\r\n";
 /* Etcd (linearizable) get request */
 static const char* get_req_linear = "GET /v2/keys/test/%s?quorum=true HTTP/1.1\r\n\r\n";
 
-/* Perform a get request against etcd 0.4.6 */
+/* Perform a get request against etcd */
 int ProtocolEtcd::get_request(const char* key) {
   int l;
   const char *req = get_req;
@@ -217,7 +217,7 @@ int ProtocolEtcd::get_request(const char* key) {
   return l;
 }
 
-/* Perform a set request against etcd 0.4.6 */
+/* Perform a set request against etcd */
 int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
   int l;
   l = evbuffer_add_printf(
@@ -232,54 +232,8 @@ int ProtocolEtcd::set_request(const char* key, const char* value, int len) {
   return l;
 }
 
-/* Handle a response from etcd 0.4.6 */
+/* Handle a response from etcd */
 bool ProtocolEtcd::handle_response(evbuffer* input, Operation* op) {
-  char *buf = NULL;
-  struct evbuffer_ptr ptr;
-  size_t n_read_out;
-
-  while (1) {
-    switch (read_state) {
-
-    case WAITING_FOR_HTTP:
-      buf = evbuffer_readln(input, &n_read_out, EVBUFFER_EOL_CRLF);
-      if (buf == NULL) return false;
-
-      stats.rx_bytes += n_read_out + 2;
-
-      if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
-        stats.get_misses++;
-      } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
-        // nothing...
-      } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
-        // nothing...
-      } else {
-        DIE("Unknown HTTP response: %s\n", buf);
-      }
-      free(buf);
-      read_state = WAITING_FOR_HTTP_BODY;
-
-    case WAITING_FOR_HTTP_BODY:
-      ptr = evbuffer_search(input, "}\r\n0\r\n\r\n", 8, NULL);
-      if (ptr.pos < 0) {
-        stats.rx_bytes += evbuffer_get_length(input) - 7;
-        evbuffer_drain(input, evbuffer_get_length(input) - 7);
-        return false;
-      }
-      stats.rx_bytes += ptr.pos + 8;
-      evbuffer_drain(input, ptr.pos + 8);
-      read_state = WAITING_FOR_HTTP;
-      return true;
-
-    default: printf("state: %d\n", read_state); DIE("Unimplemented!");
-    }
-  }
-
-  DIE("Shouldn't ever reach here...");
-}
-
-/* Handle a response from etcd HEAD */
-bool ProtocolEtcd2::handle_response(evbuffer* input, Operation* op) {
   char *buf = NULL;
   struct evbuffer_ptr ptr;
   size_t n_read_out;
