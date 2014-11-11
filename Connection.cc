@@ -387,7 +387,7 @@ void Connection::event_callback(server_t* serv, short events) {
   } else if (events & BEV_EVENT_ERROR) {
     int err = bufferevent_socket_get_dns_error(serv->bev);
     if (err) DIE("DNS error: %s\n", evutil_gai_strerror(err));
-    DIE("BEV_EVENT_ERROR: %s\n", strerror(errno));
+    DIE("BEV_EVENT_ERROR: %s => %s\n", serv->host.c_str(), strerror(errno));
 
   } else if (events & BEV_EVENT_EOF) {
     DIE("Unexpected EOF from server.\n");
