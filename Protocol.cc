@@ -353,7 +353,7 @@ bool ProtocolEtcd2::handle_response(evbuffer* input, Operation* op) {
       return true;
 
     case LEADER_CHANGED:
-      ptr = evbuffer_search(input, "X-Etcd-Leader: ", 15, NULL);
+      ptr = evbuffer_search(input, "X-Raft-Leader: ", 15, NULL);
       if (ptr.pos < 0) {
         stats.rx_bytes += evbuffer_get_length(input) - 14;
         evbuffer_drain(input, evbuffer_get_length(input) - 14);
