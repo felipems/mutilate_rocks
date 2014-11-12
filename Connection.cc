@@ -521,7 +521,7 @@ void Connection::read_callback(server_t* serv) {
           string keystr = keygen->generate(loader_issued);
           strcpy(key, keystr.c_str());
           int index = lrand48() % (1024 * 1024);
-          issue_set(serv, key, &random_char[index], valuesize->generate());
+          issue_set(leader, key, &random_char[index], valuesize->generate());
 
           loader_issued++;
         }

@@ -251,23 +251,23 @@ bool ProtocolEtcd::handle_response(evbuffer* input, Operation* op) {
 
       stats.rx_bytes += n_read_out + 2;
 
-      if (!strncmp(buf, "HTTP/1.1 404 Not Found", n_read_out)) {
+      if (!strcmp(buf, "HTTP/1.1 404 Not Found")) {
         stats.get_misses++;
-      } else if (!strncmp(buf, "HTTP/1.1 200 OK", n_read_out)) {
+      } else if (!strcmp(buf, "HTTP/1.1 200 OK")) {
         // nothing...
-      } else if (!strncmp(buf, "HTTP/1.1 201 Created", n_read_out)) {
+      } else if (!strcmp(buf, "HTTP/1.1 201 Created")) {
         // nothing...
-      } else if (!strncmp(buf, "HTTP/1.1 424 status code 424", n_read_out)) {
+      } else if (!strcmp(buf, "HTTP/1.1 424 status code 424")) {
         // 404 -- where leader has moved.
         leader_changed = true;
         stats.get_misses++;
-      } else if (!strncmp(buf, "HTTP/1.1 422 status code 422", n_read_out)) {
+      } else if (!strcmp(buf, "HTTP/1.1 422 status code 422")) {
         // 200 -- where leader has moved.
         leader_changed = true;
-      } else if (!strncmp(buf, "HTTP/1.1 423 status code 423", n_read_out)) {
+      } else if (!strcmp(buf, "HTTP/1.1 423 status code 423")) {
         // 201 created -- where leader has moved.
         leader_changed = true;
-      } else if (!strncmp(buf, "HTTP/1.1 500 Internal Server Error", n_read_out)) {
+      } else if (!strcmp(buf, "HTTP/1.1 500 Internal Server Error")) {
 #if USE_CACHED_TIME
         struct timeval now_tv;
         event_base_gettimeofday_cached(base, &now_tv);
@@ -295,14 +295,14 @@ bool ProtocolEtcd::handle_response(evbuffer* input, Operation* op) {
       }
 
     case WAITING_FOR_HTTP_BODY:
-      ptr = evbuffer_search(input, "}\n", 2, NULL);
+      ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
       if (ptr.pos < 0) {
         stats.rx_bytes += evbuffer_get_length(input) - 1;
         evbuffer_drain(input, evbuffer_get_length(input) - 1);
         return false;
       }
-      stats.rx_bytes += ptr.pos + 2;
-      evbuffer_drain(input, ptr.pos + 2);
+      stats.rx_bytes += ptr.pos + 5;
+      evbuffer_drain(input, ptr.pos + 5);
       read_state = WAITING_FOR_HTTP;
       return true;
 
@@ -320,7 +320,7 @@ bool ProtocolEtcd::handle_response(evbuffer* input, Operation* op) {
       // only change leader if we are the leader, otherwise our info may be
       // old...
       if (serv.id == serv.conn->get_leader()) {
-        printf("%d\n", new_leader);
+        printf("new leader %d\n", new_leader);
         serv.conn->set_leader(new_leader);
       }
       read_state = WAITING_FOR_HTTP_BODY;
