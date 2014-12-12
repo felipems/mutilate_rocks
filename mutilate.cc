@@ -674,7 +674,9 @@ void go(const vector<string>& servers, options_t& options,
     vector<string> ts[options.threads];
 #endif
 
+#ifdef __linux__
     int current_cpu = -1;
+#endif
 
     for (int t = 0; t < options.threads; t++) {
       td[t].options = &options;
@@ -697,6 +699,7 @@ void go(const vector<string>& servers, options_t& options,
       pthread_attr_t attr;
       pthread_attr_init(&attr);
 
+#ifdef __linux__
       if (args.affinity_given) {
         int max_cpus = 8 * sizeof(cpu_set_t);
         cpu_set_t m;
@@ -718,6 +721,7 @@ void go(const vector<string>& servers, options_t& options,
           }
         }
       }
+#endif
 
       if (pthread_create(&pt[t], &attr, thread_main, &td[t]))
         DIE("pthread_create() failed");
