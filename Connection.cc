@@ -1,4 +1,5 @@
 #include <netinet/tcp.h>
+#include <netinet/in.h>
 
 #include <string>
 #include <sstream>
