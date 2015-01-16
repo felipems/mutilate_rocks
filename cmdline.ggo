@@ -34,7 +34,7 @@ text "\nAdvanced options:"
 option "username" U "Username to use for SASL authentication." string
 option "password" P "Password to use for SASL authentication." string
 option "threads" T "Number of threads to spawn." int default="1"
-option "affinity" - "Set CPU affinity for threads, round-robin"
+option "affinity" - "Set CPU affinity for threads, round-robin (Linux only)"
 option "connections" c "Connections to establish per server." int default="1"
 option "depth" d "Maximum depth to pipeline requests." int default="1"
 option "roundrobin" R "Assign threads to servers in round-robin fashion.  \
