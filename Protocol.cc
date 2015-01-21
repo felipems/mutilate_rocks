@@ -30,6 +30,8 @@ int ProtocolRocksDB::get_request(const char* key) {
   l = evbuffer_add_printf(
     bufferevent_get_output(bev), "3\nget\n%d\n%s\n\n", key_len, key);
   if (read_state == IDLE) read_state = WAITING_FOR_GET;
+
+  // printf("GOT %i\n", l );
   return l;
 }
 /**
@@ -45,7 +47,11 @@ int ProtocolRocksDB::set_request(const char* key, const char* value, int len) {
   // bufferevent_write(bev, value, len);
   // bufferevent_write(bev, "\r\n", 2);
   if (read_state == IDLE) read_state = WAITING_FOR_END;
+  
+  // printf("SET %i\n", l );
+
   return l;
+
 }
 
 /**
@@ -65,55 +71,67 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
     // case WAITING_FOR_GET:
     // case WAITING_FOR_END:
       // find_size_of_buff(input); 
+      // pause(1);
+      // while (true)
+      // {
+         buff_search = evbuffer_search(input, "\n\n", 2, NULL); 
 
-      buff_search = evbuffer_search(input, "\n\n", 2, NULL); 
+        data_length = buff_search.pos; 
 
-      data_length = buff_search.pos; 
+        if(data_length ==0 ) 
+        {
+          // printf("%s\n", "sadness, no data \n " );
+          // break; // we have read no data! 
+          // printf("%s\n", "sadness, no data" );
+          return false ;
+        } 
+        
+      // }
+      
 
-      if(data_length ==0 ) 
-      {
-        // printf("%s\n", "sadness, no data \n " );
-        return false; // we have read no data! 
-      }
-
-      buf = malloc(data_length+2); 
+      buf = malloc(data_length+3); 
       nbytes_read = 0;
-      nbytes_read = evbuffer_remove(input, buf, data_length); 
+      nbytes_read = evbuffer_copyout(input, buf, data_length+2); 
+      evbuffer_drain(input, data_length+2 );
+      // printf("DL %zu, input drain %zu\n",  data_length, evbuffer_get_length(input) );
+
       buff = (char*) buf;
       // printf("%zu\n", nbytes_read);
       // printf ("%p, %p \n", buff, buf);
       // printf("%c\n", buff[0]);
-      buff[data_length] = '\0';
+      buff[data_length+2] = '\0';
 
-      assert(nbytes_read == data_length);
+      // assert(nbytes_read == data_length);
 
-      // printf(" !! %s\n !!", buff);
+      // printf("-%s-\n", buff);
 
 
       if (buf == NULL) return false; 
       
 
-      stats.rx_bytes += nbytes_read +2;
+      stats.rx_bytes += nbytes_read;
 
       // debugging infrastructure 
       if ( nbytes_read >=11 && !strncmp(buff, "9\nnot_found", 11)) {
         if (read_state == WAITING_FOR_GET) stats.get_misses++;
         read_state = WAITING_FOR_GET;
-        printf("%s\n", "NOT FOUND");
+        // printf("%s\n", "NOT FOUND");
         free(buff);
         return true;
       } else if (nbytes_read >=8 && !strncmp(buff, "2\nok\n1\n1", 8)) { //ok on a set 
         read_state = WAITING_FOR_GET;
-        printf("%s\n", "OK ON A SET");
+        // printf("%s\n", "OK ON A SET");
         free(buff);
         return true;
       } else if (nbytes_read >=4 && !strncmp(buff, "2\nok", 4)) { //ok on a get  
-        printf("%s\n", "OK ON A GET");
+        // printf("%s\n", "OK ON A GET");
         free(buff);
         return true; 
       } else {
-        printf("%s\n", "NOTHING MAN");
-        DIE("Unknown input format of reply %s\n", buff);
+        // printf("%s\n", "NOTHING MAN");
+        free (buff);
+        return false; 
+        // DIE("Unknown input format of reply %s\n", buff);
       }
       // break;
     // default: printf("state: %d\n", read_state); DIE("Unimplemented!");
