@@ -15,6 +15,7 @@ Repeat to specify multiple servers." string multiple
 option "binary" - "Use binary memcached protocol instead of ASCII."
 option "etcd" - "Test etcd (0.4.6) instead of memcached."
 option "http" - "Test http instead of memcached."
+option "rocksdb" - "Test rocksdb instead of memcached."
 option "qps" q "Target aggregate QPS. 0 = peak QPS." int default="0"
 option "time" t "Maximum time to run (seconds)." int default="5"
 

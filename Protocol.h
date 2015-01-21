@@ -29,6 +29,30 @@ protected:
   ConnectionStats stats;
 };
 
+class ProtocolRocksDB : public Protocol {
+public:
+  ProtocolRocksDB(options_t opts, server_t& serv, bufferevent* bev):
+    Protocol(opts, serv, bev) { read_state = IDLE; };
+  ~ProtocolRocksDB() {};
+
+  virtual bool setup_connection_w() { return true; }
+  virtual bool setup_connection_r(evbuffer* input) { return true; }
+  virtual int  get_request(const char* key);
+  virtual int  set_request(const char* key, const char* value, int len);
+  virtual bool handle_response(evbuffer* input, Operation* op);
+
+private:
+  enum read_fsm {
+    IDLE,
+    WAITING_FOR_GET,
+    WAITING_FOR_GET_DATA,
+    WAITING_FOR_END,
+  };
+
+  read_fsm read_state;
+  int data_length;
+};
+
 class ProtocolAscii : public Protocol {
 public:
   ProtocolAscii(options_t opts, server_t& serv, bufferevent* bev):

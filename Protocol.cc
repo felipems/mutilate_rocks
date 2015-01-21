@@ -21,6 +21,109 @@
 #define unlikely(x) __builtin_expect((x),0)
 
 /**
+ * Send an RocksDb get request.
+ */
+int ProtocolRocksDB::get_request(const char* key) {
+  int l;
+  int key_len = strlen(key);
+
+  l = evbuffer_add_printf(
+    bufferevent_get_output(bev), "3\nget\n%d\n%s\n\n", key_len, key);
+  if (read_state == IDLE) read_state = WAITING_FOR_GET;
+  return l;
+}
+/**
+ * Send an RocksDb set request.
+ */
+int ProtocolRocksDB::set_request(const char* key, const char* value, int len) {
+  int l;
+  int key_len = strlen(key);
+  int val_len = strlen(value);
+
+  l = evbuffer_add_printf(bufferevent_get_output(bev),
+                          "3\nset\n%d\n%s\n%d\n%s\n\n", key_len, key, val_len,value);
+  // bufferevent_write(bev, value, len);
+  // bufferevent_write(bev, "\r\n", 2);
+  if (read_state == IDLE) read_state = WAITING_FOR_END;
+  return l;
+}
+
+/**
+ * Handle an RocksDBresponse response.
+ */
+
+bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
+  void *buf = NULL;
+  size_t data_length, nbytes_read; 
+  char * buff;
+  struct evbuffer_ptr buff_search;
+
+  // printf("%i\n", read_state);
+  // while (1) {
+    // switch (read_state) {
+
+    // case WAITING_FOR_GET:
+    // case WAITING_FOR_END:
+      // find_size_of_buff(input); 
+
+      buff_search = evbuffer_search(input, "\n\n", 2, NULL); 
+
+      data_length = buff_search.pos; 
+
+      if(data_length ==0 ) 
+      {
+        // printf("%s\n", "sadness, no data \n " );
+        return false; // we have read no data! 
+      }
+
+      buf = malloc(data_length+2); 
+      nbytes_read = 0;
+      nbytes_read = evbuffer_remove(input, buf, data_length); 
+      buff = (char*) buf;
+      // printf("%zu\n", nbytes_read);
+      // printf ("%p, %p \n", buff, buf);
+      // printf("%c\n", buff[0]);
+      buff[data_length] = '\0';
+
+      assert(nbytes_read == data_length);
+
+      // printf(" !! %s\n !!", buff);
+
+
+      if (buf == NULL) return false; 
+      
+
+      stats.rx_bytes += nbytes_read +2;
+
+      // debugging infrastructure 
+      if ( nbytes_read >=11 && !strncmp(buff, "9\nnot_found", 11)) {
+        if (read_state == WAITING_FOR_GET) stats.get_misses++;
+        read_state = WAITING_FOR_GET;
+        printf("%s\n", "NOT FOUND");
+        free(buff);
+        return true;
+      } else if (nbytes_read >=8 && !strncmp(buff, "2\nok\n1\n1", 8)) { //ok on a set 
+        read_state = WAITING_FOR_GET;
+        printf("%s\n", "OK ON A SET");
+        free(buff);
+        return true;
+      } else if (nbytes_read >=4 && !strncmp(buff, "2\nok", 4)) { //ok on a get  
+        printf("%s\n", "OK ON A GET");
+        free(buff);
+        return true; 
+      } else {
+        printf("%s\n", "NOTHING MAN");
+        DIE("Unknown input format of reply %s\n", buff);
+      }
+      // break;
+    // default: printf("state: %d\n", read_state); DIE("Unimplemented!");
+    // }
+  // }
+
+  DIE("Shouldn't ever reach here...");
+}
+
+/**
  * Send an ascii get request.
  */
 int ProtocolAscii::get_request(const char* key) {

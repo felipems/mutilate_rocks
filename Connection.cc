@@ -114,6 +114,8 @@ void Connection::connect_server(server_t &serv) {
     prot = new ProtocolHttp(options, serv, bev);
   } else if (options.binary) {
     prot = new ProtocolBinary(options, serv, bev);
+  }else if (options.rocksdb) {
+    prot = new ProtocolRocksDB(options, serv, bev);
   } else {
     prot = new ProtocolAscii(options, serv, bev);
   }
