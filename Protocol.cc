@@ -20,6 +20,7 @@
 
 #define unlikely(x) __builtin_expect((x),0)
 
+int counter=0; 
 /**
  * Send an RocksDb get request.
  */
@@ -32,6 +33,7 @@ int ProtocolRocksDB::get_request(const char* key) {
   if (read_state == IDLE) read_state = WAITING_FOR_GET;
 
   // printf("GOT %i\n", l );
+  // printf("GET KL:%i \n", key_len);
   return l;
 }
 /**
@@ -48,7 +50,7 @@ int ProtocolRocksDB::set_request(const char* key, const char* value, int len) {
   // bufferevent_write(bev, "\r\n", 2);
   if (read_state == IDLE) read_state = WAITING_FOR_END;
   
-  // printf("SET %i\n", l );
+  // printf("SET KL:%i VL:%i \n", key_len, val_len );
 
   return l;
 
@@ -76,7 +78,7 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
       // {
          buff_search = evbuffer_search(input, "\n\n", 2, NULL); 
 
-        data_length = buff_search.pos; 
+        data_length = buff_search.pos == -1 ? 0: buff_search.pos; 
 
         if(data_length ==0 ) 
         {
@@ -129,6 +131,14 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
         return true; 
       } else {
         // printf("%s\n", "NOTHING MAN");
+        counter++;
+        // printf("%i\n",counter );
+        
+        // printf("-%s-\n", buff);
+        // size_t bla =0; 
+        // bla--; 
+
+        // printf("DL %zu, input drain %zu\n",  data_length, bla );
         free (buff);
         return false; 
         // DIE("Unknown input format of reply %s\n", buff);
