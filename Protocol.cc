@@ -31,6 +31,8 @@ int ProtocolRocksDB::get_request(const char* key) {
   l = evbuffer_add_printf(
     bufferevent_get_output(bev), "3\nget\n%d\n%s\n\n", key_len, key);
   
+  if (read_state == IDLE) read_state = WAITING_FOR_GET;
+  //printf("Issue GET \t");
   return l;
 }
 /**
@@ -44,6 +46,7 @@ int ProtocolRocksDB::set_request(const char* key, const char* value, int len) {
   l = evbuffer_add_printf(bufferevent_get_output(bev),
                           "3\nset\n%d\n%s\n%d\n%s\n\n", key_len, key, val_len,value);
 
+  if (read_state == IDLE) read_state = WAITING_FOR_END;
   return l;
 
 }
@@ -58,7 +61,7 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
   size_t nbytes_read = 0; 
   char * buff;
   struct evbuffer_ptr buff_search;
-
+  
   // Search for "\n\n" in input buffer
   // which would indicate presence of a complete response
   buff_search = evbuffer_search(input, "\n\n", 2, NULL); 
@@ -90,8 +93,12 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
         // printf("%s\n", "OK ON A SET");
         free(buff);
         return true;
-   } else if (nbytes_read >=4 && !strncmp(buff, "2\nok", 4)) { // OK ON A GET  
+   }  else if (nbytes_read >=4 && !strncmp(buff, "2\nok", 4)) { // OK ON A GET  
         // printf("%s\n", "OK ON A GET");
+        free(buff);
+        return true; 
+   } else if (nbytes_read >=4 && !strncmp(buff, "\n2\nok", 5)) { // OK ON A GET where prev value read ended with a \n
+        //printf("%s\n", "OK ON A GET weird");
         free(buff);
         return true; 
    } else {
