@@ -330,10 +330,13 @@ void Connection::finish_op(server_t* serv, Operation *op) {
   op->end_time = now;
 #endif
 
+  stats.rx_bytes = serv->prot->rx_bytes_stats();
+
   switch (op->type) {
   case Operation::GET:
     if (op->switched > 0) op->type = Operation::GETW;
     stats.log_get(*op);
+    stats.get_misses = serv->prot->get_misses_stats();
     break;
   case Operation::SET:
     if (op->switched > 0) op->type = Operation::SETW;

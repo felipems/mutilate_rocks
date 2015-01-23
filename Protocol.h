@@ -22,6 +22,10 @@ public:
   virtual int  set_request(const char* key, const char* value, int len) = 0;
   virtual bool handle_response(evbuffer* input, Operation* op) = 0;
 
+  // Functions to pass protocol stats to connection stats object
+  int get_misses_stats() { return stats.get_misses; }
+  int rx_bytes_stats() { return stats.rx_bytes; }
+
 protected:
   options_t       opts;
   server_t&       serv;
