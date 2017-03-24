@@ -486,8 +486,8 @@ int main(int argc, char **argv) {
     int max = atoi(max_ptr);
     int step = atoi(step_ptr);
 
-    printf("%-7s %7s %7s %7s %7s %7s %7s %7s %7s %8s %8s\n",
-           "#type", "avg", "min", "1st", "5th", "10th",
+    printf("%-7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %8s %8s\n",
+           "#type", "avg", "std", "min", "1st", "5th", "10th", "50th",
            "90th", "95th", "99th", "QPS", "target");
 
     for (int q = min; q <= max; q += step) {
@@ -506,6 +506,10 @@ int main(int argc, char **argv) {
       stats.print_stats(stdout, "read", stats.get_sampler, false);
       printf(" %8.1f", stats.get_qps());
       printf(" %8d\n", q);
+      //stats.print_stats(stdout, "update", stats.set_sampler, false); //ANA!!!
+      //printf(" set_qps %8.1f", stats.get_setqps());
+      //printf(" get_qps %8.1f", stats.get_getqps());
+      //printf(" %8d\n", q);
     }    
   } else {
     go(servers, options, stats);
@@ -583,6 +587,8 @@ int main(int argc, char **argv) {
       fprintf(arch, "Peak QPS  = %.1f\n", peak_qps);
 
     fprintf(arch, "\n");
+
+    fprintf(arch, "Gets_sent = %d\n", stats.gets_sent);
 
     fprintf(arch, "Misses = %" PRIu64 " (%.1f%%)\n", stats.get_misses,
             (double) stats.get_misses/stats.gets*100);
@@ -1090,6 +1096,26 @@ void args_to_options(options_t* options) {
 }
 
 void init_random_stuff() {
+
+  //set random seed on this host
+
+  char host[32];
+  int hostname = gethostname(host, sizeof host);
+  if (hostname == -1) printf("hostname error\n");
+  else {
+    unsigned int i=0;
+    hostname = 5381; 
+    for (i=0; i < (sizeof host); i++){
+	if (host[i] == '\0') break;
+        hostname = ((hostname << 5) + hostname) + host[i];
+     	//c += host[i];
+    }
+    //hostname = c;
+  } 
+  //printf("%s", host);
+  //printf(" %d\n", hostname);
+  srand48(hostname);
+
   static char lorem[] =
     R"(Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas turpis dui, suscipit non vehicula non, malesuada id sem. Phasellus suscipit nisl ut dui consectetur ultrices tincidunt eros aliquet. Donec feugiat lectus sed nibh ultrices ultrices. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Mauris suscipit eros sed justo lobortis at ultrices lacus molestie. Duis in diam mi. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Ut cursus viverra sagittis. Vivamus non facilisis tortor. Integer lectus arcu, sagittis et eleifend rutrum, condimentum eget sem. Vestibulum tempus tellus non risus semper semper. Morbi molestie rhoncus mi, in egestas dui facilisis et.)";
 

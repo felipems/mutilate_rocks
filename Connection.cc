@@ -5,6 +5,8 @@
 #include <sstream>
 #include <vector>
 
+#include <unistd.h>
+
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 #include <event2/dns.h>
@@ -65,6 +67,7 @@ Connection::Connection(struct event_base* _base, struct evdns_base* _evdns,
   for (server_t &s : servers) {
     connect_server(s);
   }
+
 
   timer = evtimer_new(base, timer_cb, this);
 }
@@ -224,14 +227,30 @@ void Connection::start_loading() {
 void Connection::issue_something(server_t* serv, double now) {
   char key[256];
   // FIXME: generate key distribution here!
-  string keystr = keygen->generate(lrand48() % options.records);
-  strcpy(key, keystr.c_str());
+  // Approximate 80-20 rule
+  // 20% most popular keys contribute to 80% of requests
+/*
+  int num_20perc_records = options.records * 0.2;
+  //string keystr = NULL;
+  if (drand48() > 0.8){
+    string keystr = keygen->generate(lrand48() % options.records);
+    strcpy(key, keystr.c_str());
 
+  } else { //80% of the time, generate first 20% of keys
+    string keystr = keygen->generate(lrand48() % num_20perc_records);
+    strcpy(key, keystr.c_str());
+  }
+*/
+  //RANDOM
+ string keystr = keygen->generate(lrand48() % options.records);
+ strcpy(key, keystr.c_str());
+  
   if (drand48() < options.update) {
     int index = lrand48() % (1024 * 1024);
     issue_set(serv, key, &random_char[index], valuesize->generate(), now);
   } else {
     issue_get(serv, key, now);
+    stats.gets_sent += 1;
   }
 }
 
@@ -432,7 +451,7 @@ void Connection::drive_write_machine(server_t* serv, double now) {
         serv->write_state = WAITING_FOR_TIME;
         break; // We want to run through the state machine one more time
                // to make sure the timer is armed.
-      } else if (options.moderate && now < last_rx + 0.00025) {
+      } else if (options.moderate && now < last_rx + 0.00025) { //ANA try decreasing this number?
         serv->write_state = WAITING_FOR_TIME;
         if (!event_pending(timer, EV_TIMEOUT, NULL)) {
           delay = last_rx + 0.00025 - now;

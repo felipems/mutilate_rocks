@@ -29,7 +29,7 @@ class ConnectionStats {
    get_sampler(200), set_sampler(200), op_sampler(100),
 #endif
    rx_bytes(0), tx_bytes(0), gets(0), sets(0),
-   get_misses(0), skips(0), sampling(_sampling) {}
+   get_misses(0), gets_sent(0), skips(0), sampling(_sampling) {}
 
 #ifdef USE_ADAPTIVE_SAMPLER
   AdaptiveSampler<Operation> get_sampler;
@@ -47,6 +47,7 @@ class ConnectionStats {
 
   uint64_t rx_bytes, tx_bytes;
   uint64_t gets, sets, get_misses;
+  int gets_sent; //ANA
   uint64_t skips;
 
   double start, stop;
@@ -61,6 +62,12 @@ class ConnectionStats {
     return (gets + sets) / (stop - start);
   }
 
+  double get_getqps() {
+    return (gets) / (stop - start);
+  }
+  double get_setqps() {
+    return (sets) / (stop - start);
+  }
 #ifdef USE_ADAPTIVE_SAMPLER
   double get_nth(double nth) {
     vector<double> samples;
@@ -106,6 +113,8 @@ class ConnectionStats {
     get_misses += cs.get_misses;
     skips += cs.skips;
 
+
+    gets_sent += cs.gets_sent;
     start = cs.start;
     stop = cs.stop;
   }
@@ -123,8 +132,8 @@ class ConnectionStats {
   }
 
   static void print_header(FILE* out) {
-    fprintf(out, "%-7s %7s %7s %7s %7s %7s %7s %7s %7s %7s\n",
-                 "#type", "avg", "std", "min", "5th", "10th",
+    fprintf(out, "%-7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s\n",
+                 "#type", "avg", "std", "min", "5th", "10th", "50th",
                  "90th", "95th", "99th", "max");
   }
 
@@ -183,16 +192,16 @@ class ConnectionStats {
                    bool newline = true) {
 #endif
     if (sampler.total() == 0) {
-      fprintf(out, "%-7s %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f",
-              tag, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+      fprintf(out, "%-7s %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f",
+              tag, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
       if (newline) fprintf(out, "\n");
       return;
     }
 
-    fprintf(out, "%-7s %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f",
+    fprintf(out, "%-7s %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f",
             tag, sampler.average(), sampler.stddev(),
             sampler.minimum(),  sampler.get_nth(5),
-            sampler.get_nth(10), sampler.get_nth(90),
+            sampler.get_nth(10), sampler.get_nth(50), sampler.get_nth(90),
             sampler.get_nth(95), sampler.get_nth(99),
             sampler.maximum());
 

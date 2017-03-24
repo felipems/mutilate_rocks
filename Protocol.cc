@@ -32,7 +32,7 @@ int ProtocolRocksDB::get_request(const char* key) {
     bufferevent_get_output(bev), "3\nget\n%d\n%s\n\n", key_len, key);
   
   if (read_state == IDLE) read_state = WAITING_FOR_GET;
-  //printf("Issue GET \t");
+  //printf("Issue GET key_len %d, key: %s\n", key_len, key);
   return l;
 }
 /**
@@ -80,13 +80,13 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
   buff = (char*) buf;
   nbytes_read = evbuffer_copyout(input, buf, data_length+2); 
   evbuffer_drain(input, data_length+2 );
-  
+ 
   stats.rx_bytes += nbytes_read;
 
   // determine which type of response: 
   if ( nbytes_read >=11 && !strncmp(buff, "9\nnot_found", 11)) { // NOT FOUND
         stats.get_misses++;
-        //printf("%s\n", "NOT FOUND");
+        printf("%s\n", "NOT FOUND");
         free(buff);
         return true;
    } else if (nbytes_read >=8 && !strncmp(buff, "2\nok\n1\n1", 8)) { // OK ON A SET 
@@ -95,14 +95,15 @@ bool ProtocolRocksDB::handle_response(evbuffer *input, Operation* op) {
         return true;
    }  else if (nbytes_read >=4 && !strncmp(buff, "2\nok", 4)) { // OK ON A GET  
         // printf("%s\n", "OK ON A GET");
+  	//printf("%lu\t", nbytes_read); 
         free(buff);
         return true; 
    } else if (nbytes_read >=4 && !strncmp(buff, "\n2\nok", 5)) { // OK ON A GET where prev value read ended with a \n
-        printf("%s\n", "OK ON A GET after \n start");
+        //printf("%s\n", "OK ON A GET after \n start");
         free(buff);
         return true; 
    } else {
-        printf("Unknown input format of reply %s\n", buff);
+        printf("Unknown input format of reply. Read %lu bytes. Msg is %s\n", nbytes_read, buff);
         //DIE("Unknown input format of reply %s\n", buff);
         free (buff);
         return false; 
